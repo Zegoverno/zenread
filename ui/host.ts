@@ -77,6 +77,17 @@ const zenOf = (ctx: McpUiHostContext | undefined): ZenContext | undefined => {
 };
 const zenHost = () => zenOf(app.getHostContext());
 const host: HostAdapter = {
+  close() {
+    if (zenHost()?.slot !== "opener") return false;
+    app.openLink({ url: "zen://close" }).catch(() => {});
+    return true;
+  },
+  get editNote() {
+    if (!zenHost()) return undefined;
+    return (path: string) => {
+      app.openLink({ url: `zen://open?path=${encodeURIComponent(path)}&mode=edit` }).catch(() => {});
+    };
+  },
   openWeb(url) {
     app.openLink({ url }).catch(() => {});
   },

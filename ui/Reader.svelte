@@ -416,10 +416,12 @@
   }
 
   function goBack() {
+    if (!env.standalone && env.host.close?.()) return;
     if (!store.goBack()) close();
   }
   function close() {
     stop();
+    if (!env.standalone && env.host.close?.()) return;
     store.close();
   }
 
@@ -691,6 +693,9 @@
     </div>
     <div class="tools" role="toolbar" aria-label="reader">
       <button onclick={goBack} title={canBack ? 'back (← or backspace)' : 'close (esc)'}>{canBack ? '←' : '✕'}</button>
+      {#if !env.standalone && env.host.editNote}
+        <button onclick={() => store.path && env.host.editNote?.(store.path)} title="Edit in host">Edit</button>
+      {/if}
       <button onclick={() => sibling(-1)} disabled={!hasPrev} title="previous file in this folder (N)">‹ prev</button>
       <button onclick={() => sibling(1)} disabled={!hasNext} title="next file in this folder (n)">next ›</button>
       <span class="sep"></span>

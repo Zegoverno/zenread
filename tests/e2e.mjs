@@ -315,7 +315,9 @@ try {
   // in a host that is not zenbot: the agent's result opens the note; links open in place
   const h = await mk();
   const f = h.frameLocator('#f');
-  assert.ok(await f.locator('[data-testid=library]').isVisible(), 'the library shows until a note opens');
+  assert.equal(await f.locator('[data-testid=library]').count(), 0);
+  await f.getByText('Open a note from your host').waitFor();
+  assert.equal(await h.evaluate(() => window.calls.filter(c => c.name === 'zenread_list').length), 0);
   await h.evaluate(d => window.sendResult(d), indexDoc);
   await f.locator('[data-testid=reader]').waitFor();
   assert.equal(await title(f), 'index.md');
@@ -366,7 +368,23 @@ try {
   await z.evaluate(() => window.sendContext({ pane: 'side', path: 'sub/Third.md', mode: 'read', slot: 'opener' }));
   await z.waitForTimeout(300);
   assert.equal(await reads(), n, 'an unchanged path is not opened again');
+  await zf.getByRole('button', { name: 'Edit', exact: true }).click();
+  await z.waitForFunction(() => window.links.includes('zen://open?path=sub%2FThird.md&mode=edit'));
+  await zf.getByTitle('close (esc)', { exact: true }).click();
+  await z.waitForFunction(() => window.links.includes('zen://close'));
+  assert.equal(await title(zf), 'Third.md', 'close is a host request, not library navigation');
+  await zf.locator('.top').click();
+  await z.keyboard.press('ArrowLeft');
+  await z.waitForFunction(() => window.links.filter(l => l === 'zen://close').length === 2);
+  assert.equal(await zf.locator('[data-testid=library]').count(), 0);
+  assert.equal(await z.evaluate(() => window.calls.filter(c => c.name === 'zenread_list').length), 0);
   await z.close();
+  const empty = await mk('?zen=1');
+  const ef = empty.frameLocator('#f');
+  await ef.getByText('Open a note from your host').waitFor();
+  assert.equal(await ef.locator('[data-testid=library]').count(), 0);
+  assert.equal(await empty.evaluate(() => window.calls.filter(c => c.name === 'zenread_list').length), 0);
+  await empty.close();
 
   assert.deepEqual(errors.filter(e => !/Failed to load resource|ERR_/.test(e)), [], 'no page errors');
   console.log('e2e ok: PWA (aids, links, folder, offline) and MCP App (host, zen host)');
