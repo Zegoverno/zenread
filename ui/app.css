@@ -1,0 +1,26 @@
+/* Theme variables. In a host, its variables win (--color-*); otherwise light or dark by the system. */
+:root {
+  color-scheme: light dark;
+  --paper-d: #fbfaf7; --ink-d: #1f1d1a; --dim-d: #6f6a61; --faint-d: #d9d4ca; --accent-d: #2f6fdb; --err-d: #c0392b;
+  --paper: var(--color-background-primary, var(--paper-d));
+  --ink: var(--color-text-primary, var(--ink-d));
+  --dim: var(--color-text-secondary, var(--dim-d));
+  --faint: var(--color-border-primary, var(--faint-d));
+  --accent: var(--color-text-info, var(--accent-d));
+  --err: var(--color-text-danger, var(--err-d));
+  --mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace);
+  --serif: ui-serif, 'Iowan Old Style', 'Charter', Georgia, serif;
+  --sans: var(--font-sans, ui-sans-serif, -apple-system, 'Inter', 'Segoe UI', system-ui, sans-serif);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { --paper-d: #181817; --ink-d: #ecebe6; --dim-d: #a4a29a; --faint-d: #3b3a36; --accent-d: #7fa8f0; --err-d: #ef7a6f; }
+}
+:root[data-theme='dark'] { --paper-d: #181817; --ink-d: #ecebe6; --dim-d: #a4a29a; --faint-d: #3b3a36; --accent-d: #7fa8f0; --err-d: #ef7a6f; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-text-size-adjust: 100%; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:disabled { cursor: default; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dim { color: var(--dim); }
+.sep { width: 1px; height: 14px; background: var(--faint); margin: 0 4px; }
+.md-math { font-family: var(--mono); font-size: 0.9em; }

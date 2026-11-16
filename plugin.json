@@ -1,0 +1,18 @@
+{
+  "name": "zenread",
+  "version": "0.1.0",
+  "title": "zenread",
+  "description": "A calm Markdown reader: width, spacing, bionic reading, focus, play word by word, links and headings, the next note in the folder.",
+  "author": "Zegoverno",
+  "license": "MIT",
+  "repository": "https://github.com/Zegoverno/zenread",
+  "server": { "command": "node", "args": ["mcp/dist/server.js"] },
+  "contributes": {
+    "views": [{ "id": "library", "title": "Reading", "ui": "ui://zenread/app" }],
+    "openers": [{ "id": "read", "title": "Read", "ui": "ui://zenread/app", "patterns": ["*.md"], "mode": "read" }],
+    "games": [],
+    "commands": [{ "name": "read", "tool": "zenread_open", "args": "<path>", "description": "Open a note in the reader." }]
+  },
+  "skills": "skills/",
+  "kernel": ["files:read"]
+}
