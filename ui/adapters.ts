@@ -40,6 +40,8 @@ export interface SettingsAdapter {
 
 export interface HostAdapter {
   openWeb(url: string): void;
+  close?(): boolean;
+  editNote?(path: string): void;
   /** Hand a note to the host to open (zenbot); true when it took it, false to open it here. */
   openNote?(path: string): Promise<boolean>;
 }

@@ -11,6 +11,8 @@
 <div class="app">
   {#if store.path}
     <Reader {store} {env} />
+  {:else if !env.standalone}
+    <p class="host-prompt">Open a note from your host’s files to read it here.</p>
   {:else}
     <Library {store} {env} />
   {/if}
