@@ -3,7 +3,7 @@
 A calm reader for Markdown notes, with reading aids. One code base, three ways to run it:
 
 - a **PWA**: static files, installable on desktop and Android, works offline, nothing uploaded;
-- a **[zenbot](https://github.com/Zegoverno/zenbot) plugin**: a *Reading* tab, "Read" for `.md` files in Files,
+- a **[zenbot](https://github.com/Zegoverno/zenbot) plugin**: "Read" for `.md` files in Files,
   and a `/read <path>` command;
 - an **MCP App**: the reader as an inline widget in Claude, ChatGPT and any host that supports
   [MCP Apps](https://modelcontextprotocol.io/docs/extensions/apps), with tools the agent can call.
@@ -55,9 +55,9 @@ zen plugins add zenread
 ```
 
 or open **Settings → Marketplace** in zenbot's web app and install it there. To try a build first:
-`zen plugins add ./zenread-0.1.0.tgz`. zenbot shows the permission below and asks you to approve it.
+`zen plugins add ./zenread-0.1.1.tgz`. zenbot shows the permission below and asks you to approve it.
 
-It adds a *Reading* view, an opener for `*.md` files in read mode (set it as the default in
+It lives in **Files**, not a separate Reading tab. It adds an opener for `*.md` files in read mode (set it as the default in
 **Settings → Plugins**; until then the built-in reader stays the default), and the `/read <path>`
 command. zenbot passes the file's path in its host context (`zen.path`, `zen.pane`, `zen.slot`); a link to
 another note is handed back to zenbot with `zen://open?path=…`, which opens it with the right opener.
@@ -122,7 +122,7 @@ screenshots there; keep them out of the repository.
 ## Layout
 
 ```
-plugin.json  the zenbot manifest: views, openers, commands, permissions
+plugin.json  the zenbot manifest: openers, commands, permissions
 core/        settings, text and link rules: pure TypeScript, tested with vitest
 ui/          the Svelte 5 app; host.ts is the MCP App entry, adapters.ts the storage seam
 mcp/         the MCP server and its confined file access (built to mcp/dist/server.js)

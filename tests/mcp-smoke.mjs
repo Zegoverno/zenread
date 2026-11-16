@@ -46,7 +46,8 @@ try {
   assert.ok(names.includes(manifest.contributes.commands[0].tool));
   assert.deepEqual(manifest.contributes.openers[0], { id: 'read', title: 'Read', ui: 'ui://zenread/app', patterns: ['*.md'], mode: 'read' });
   assert.deepEqual(manifest.kernel, ['files:read']);
-  assert.equal(manifest.contributes.views[0].ui, 'ui://zenread/app');
+  assert.equal(manifest.contributes.views, undefined, 'Files opener only: no Reading tab');
+  assert.deepEqual(Object.keys(manifest.contributes).sort(), ['commands', 'openers']);
 
   // ---- the resource ----
   const { resources } = await client.listResources();

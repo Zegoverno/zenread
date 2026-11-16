@@ -1,7 +1,7 @@
 // Packs the built plugin for a release: dist/<name>-<version>.tgz, as PLUGINS.md ("Releasing") says.
 //
 //   node scripts/pack.mjs            pack what is built (npm run pack builds first)
-//   node scripts/pack.mjs --tag v0.1.0   also check that the release tag is the version
+//   node scripts/pack.mjs --tag v0.1.1   also check that the release tag is the version
 //
 // The archive holds plugin.json, mcp/dist/server.js, the built UI the server reads, skills/, README.md
 // and LICENSE at its root: no links, no absolute paths, no `..`, no node_modules, no dot files. It is
