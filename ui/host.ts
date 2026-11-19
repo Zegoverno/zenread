@@ -12,7 +12,7 @@ import type { McpUiHostContext } from '@modelcontextprotocol/ext-apps';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { mount } from 'svelte';
 import './app.css';
-import type { Env, HostAdapter, Listing, NoteDoc, SettingsAdapter, Source } from './adapters.ts';
+import type { Backlink, Env, HostAdapter, Listing, NoteDoc, SettingsAdapter, Source } from './adapters.ts';
 import App_ from './App.svelte';
 import { createStore } from './store.svelte.ts';
 import { DEFAULTS, normalize } from '../core/settings.ts';
@@ -53,6 +53,10 @@ function hostSource() {
     },
     async list(dir) {
       return (await call('zenread_list', dir ? { dir } : {})) as unknown as Listing;
+    },
+    async backlinks(path) {
+      const l = (await call('zenread_backlinks', { path })).backlinks;
+      return Array.isArray(l) ? (l as Backlink[]).filter((b) => b && typeof b.path === 'string' && typeof b.title === 'string') : [];
     },
   };
   return { source, prime: (d: NoteDoc) => primed.set(d.path, d) };

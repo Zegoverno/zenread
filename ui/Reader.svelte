@@ -4,7 +4,7 @@
   // play, one word at a time. The notes come from a Source (a folder, a host's tools, memory) and the
   // settings from the store, so the same component runs as the PWA and as an MCP App.
   import { onDestroy, onMount, tick, untrack } from 'svelte';
-  import type { Env, NoteDoc } from './adapters.ts';
+  import type { Backlink, Env, NoteDoc } from './adapters.ts';
   import type { Store } from './store.svelte.ts';
   import { render } from './md.ts';
   import { bionic, takeChangelog, units, lines, wrapWords } from './dom.ts';
@@ -22,6 +22,8 @@
   let doc = $state<NoteDoc | null>(null);
   let error = $state('');
   let loading = $state(true);
+  /** The notes that link here ("Linked from"), once the source has said; empty when it cannot. */
+  let linked = $state<Backlink[]>([]);
 
   let scroller = $state<HTMLDivElement>();
   let host = $state<HTMLDivElement>();
@@ -107,6 +109,9 @@
     error = '';
     doc = d;
     loading = false;
+    if (!again) linked = [];
+    // After the note is shown: the scan for backlinks may take a moment and must not delay the text.
+    store.source!.backlinks?.(p).then((l) => { if (n === seq) linked = l; }, () => { if (n === seq) linked = []; });
     if (!again) {
       linkSel = -1;
       focusAt = -1;
@@ -795,6 +800,16 @@
       {/if}
       <div class="body" bind:this={host} onclick={onClick} onchange={onTick} role="presentation">
       </div>
+      {#if linked.length}
+        <nav class="linked" aria-label="Linked from" data-testid="linked">
+          <div class="lh">Linked from</div>
+          {#each linked as b (b.path)}
+            <button class="ll" onclick={() => void store.follow(b.path)} title={b.path}>
+              <span>{b.title}</span><small>{dirOf(b.path) || store.label || 'Vault'}</small>
+            </button>
+          {/each}
+        </nav>
+      {/if}
       {#if mark}<span class="mark" style:top="{mark.top}px" style:height="{mark.height}px"></span>{/if}
     </div>
   </div>
@@ -880,6 +895,12 @@
   .fm.open { display: grid; grid-template-columns: max-content 1fr; gap: 0 14px; white-space: normal; }
   .fm.open .pv { color: var(--ink); overflow-wrap: anywhere; }
 
+  .linked { margin: 2.2em 0 0; padding-top: 14px; border-top: 1px solid var(--faint); font-family: var(--sans); }
+  .lh { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); font-weight: 650; margin-bottom: 6px; }
+  .ll { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 7px 8px; border-radius: var(--r-md); font-size: 15px; text-align: left; }
+  .ll span { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ll small { margin-left: auto; flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--dim); }
+  .ll:hover { background: var(--soft); }
   .mark { position: absolute; left: 6px; width: 3px; border-radius: 2px; background: var(--accent); }
 
   /* the rendered text */

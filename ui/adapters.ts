@@ -20,6 +20,7 @@ export interface NoteDoc {
   /** Where each link of the note points: `[[target]]` or the relative href → note path, or null. */
   resolved: Record<string, string | null>;
 }
+export interface Backlink { path: string; title: string }
 export interface FolderEntry { name: string; path: string }
 export interface NoteEntry extends FolderEntry { size: number; mtime: number }
 export interface Listing { dir: string; folders: FolderEntry[]; files: NoteEntry[]; truncated?: boolean }
@@ -31,6 +32,8 @@ export interface Source {
   live?: boolean;
   read(path: string): Promise<NoteDoc>;
   list(dir: string): Promise<Listing>;
+  /** The notes that link to `path` ("Linked from"), when the source can tell. */
+  backlinks?(path: string): Promise<Backlink[]>;
 }
 
 export interface SettingsAdapter {
