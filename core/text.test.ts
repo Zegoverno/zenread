@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countWords, dwell, orp, properties, slug, sourceLink, splitFront } from './text.ts';
+import { chips, countWords, dwell, orp, properties, slug, sourceLink, splitFront } from './text.ts';
 
 describe('front matter', () => {
   it('splits a block off the top, reading CRLF as LF', () => {
@@ -43,5 +43,21 @@ describe('slug and word count', () => {
   });
   it('counts words, not symbols', () => {
     expect(countWords('One two — three\n\n- four, 5 ***')).toBe(5);
+  });
+});
+
+describe('chips', () => {
+  it('makes one chip per tag and one per other property, without the title', () => {
+    const p = properties('title: Harbour\ntype: essay\ntags: [sea, "#stairs"]\nstatus: draft');
+    expect(chips(p)).toEqual([
+      { key: 'type', value: 'essay', tag: false },
+      { key: 'tags', value: 'sea', tag: true },
+      { key: 'tags', value: 'stairs', tag: true },
+      { key: 'status', value: 'draft', tag: false },
+    ]);
+  });
+  it('joins list values and caps the count', () => {
+    expect(chips([['authors', 'A · B']])).toEqual([{ key: 'authors', value: 'A, B', tag: false }]);
+    expect(chips(Array.from({ length: 20 }, (_, i) => [`k${i}`, 'v'] as [string, string]), 5)).toHaveLength(5);
   });
 });

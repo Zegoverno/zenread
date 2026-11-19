@@ -11,7 +11,7 @@
   import { anchorOf, dirOf, resolveRelative, wikiKey } from '../core/links.ts';
   import { DIMS, WPM, keep, nextDim, nextFocus, widen as widthStep } from '../core/settings.ts';
   import type { ReaderSettings } from '../core/settings.ts';
-  import { dwell, orp, properties, slug, sourceLink } from '../core/text.ts';
+  import { chips, dwell, orp, properties, slug, sourceLink } from '../core/text.ts';
   import { zen } from './zen.svelte.ts';
 
   let { store, env }: { store: Store; env: Env } = $props();
@@ -28,6 +28,8 @@
   let logHost = $state<HTMLDivElement>();
 
   let fm = $state<[string, string][]>([]);
+  /** In zenbot: the note's title (its first heading, else the title property, else the file name). */
+  let title = $state('');
   let propsOpen = $state(false);
   let hasLog = $state(false);
   let showLog = $state(false);
@@ -58,6 +60,7 @@
   // behind "Aa" (the reading aids), so a phone's pane stays calm.
   const inZen = $derived(zen.active);
   let aids = $state(false);
+  const zchips = $derived(chips(fm));
 
   // ---- the folder's other notes (previous / next, from the source) ----
 
@@ -140,6 +143,11 @@
     const r = render(d.text);
     const body = r.el;
     fm = r.front ? properties(r.front) : [];
+    const first = body.firstElementChild;
+    if (inZen && first?.tagName === 'H1' && (first.textContent ?? '').trim()) {
+      title = first.textContent!.trim();
+      first.remove();
+    } else title = fm.find(([k]) => k.toLowerCase() === 'title')?.[1] || name.replace(/\.(md|markdown)$/i, '');
     const log = takeChangelog(body);
     words = wrapWords(body);
     nWords = words.length;
@@ -742,7 +750,16 @@
 
   <div class="scroll" bind:this={scroller} onscroll={onScroll} class:hidden={!doc}>
     <div class="rpage" style:max-width={set.width ? `calc(${set.width}ch + 48px)` : 'none'} class:focusing class:playing={!!play}>
-      {#if fm.length}
+      {#if inZen}
+        <h1 class="ztitle" data-testid="title">{title}</h1>
+        {#if zchips.length}
+          <div class="chips" data-testid="chips">
+            {#each zchips as c}
+              {#if c.tag}<span class="chip tag">#{c.value}</span>{:else}<span class="chip" title={c.key}>{#if c.key.toLowerCase() !== 'type'}<em>{c.key}</em>{/if}{c.value}</span>{/if}
+            {/each}
+          </div>
+        {/if}
+      {:else if fm.length}
         {#if propsOpen}
           <button class="fm open" onclick={() => (propsOpen = false)} title="fold (i)">
             {#each fm as [key, v]}<span class="pk">{key}</span><span class="pv">{v}</span>{/each}
@@ -830,6 +847,11 @@
   .spaced .rpage { line-height: 2; }
   .clog .rpage { padding-top: 6px; padding-bottom: 12px; }
 
+  .ztitle { font-family: var(--heading); font-weight: 600; font-size: 1.7em; line-height: 1.2; margin: 0.2em 0 0.35em; overflow-wrap: anywhere; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 1.4em; font-family: var(--sans); }
+  .chip { font-size: 12px; line-height: 1.5; padding: 1px 9px; border-radius: var(--r-full); background: var(--soft); color: var(--ink); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip em { font-style: normal; color: var(--dim); margin-right: 5px; }
+  .chip.tag { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .fm { display: block; width: 100%; text-align: left; color: var(--dim); font-family: var(--sans); font-size: 13px; line-height: 1.6; margin: 0 0 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fm .pk { color: var(--dim); }
   .fm.open { display: grid; grid-template-columns: max-content 1fr; gap: 0 14px; white-space: normal; }

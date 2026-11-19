@@ -29,6 +29,22 @@ export function properties(front: string): [string, string][] {
   return props.filter(([, vs]) => vs.length).map(([k, vs]) => [k, vs.join(' · ')]);
 }
 
+export interface Chip { key: string; value: string; tag: boolean }
+
+/** Properties as small chips under the title: one per tag (`tags`, `tag`) and one per other property,
+ *  the `title` left out (it is the title) and at most `max` in all. */
+export function chips(props: [string, string][], max = 12): Chip[] {
+  const out: Chip[] = [];
+  for (const [key, value] of props) {
+    const k = key.toLowerCase();
+    if (k === 'title') continue;
+    if (k === 'tags' || k === 'tag') {
+      for (const t of value.split(' · ')) if (t.trim()) out.push({ key, value: t.trim().replace(/^#/, ''), tag: true });
+    } else out.push({ key, value: value.split(' · ').join(', '), tag: false });
+  }
+  return out.slice(0, max);
+}
+
 /** The note's web link: the first http(s) value among the properties, `link`, `url` and `source` first. */
 export function sourceLink(props: [string, string][]): string | null {
   const web = (v: string) => /^https?:\/\/\S+$/.exec(v.split(' · ')[0].trim())?.[0];
