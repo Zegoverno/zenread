@@ -93,7 +93,7 @@ const host: HostAdapter = {
   },
   async openNote(path) {
     if (!zenHost()) return false;
-    const r = await app.openLink({ url: `zen://open?path=${encodeURIComponent(path)}` });
+    const r = await app.openLink({ url: `zen://open?path=${encodeURIComponent(path)}&mode=read` });
     return !r.isError;
   },
 };

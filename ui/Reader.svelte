@@ -165,6 +165,7 @@
     us = units(body);
     us.forEach((u) => u.classList.add('u'));
     links = [...body.querySelectorAll('a')];
+    for (const a of links) if (a.dataset.wiki !== undefined && d.resolved[wikiKey(a.dataset.wiki)] === null) a.classList.add('missing');
     logUnits = log ? units(log) : [];
     paintFocus();
     if (play) paintWord();
@@ -911,6 +912,8 @@
   .body :global(img) { max-width: 100%; }
   .body :global(a) { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); cursor: pointer; }
   .body :global(a:hover) { border-bottom-color: var(--accent); }
+  .body :global(a.md-wiki) { border-bottom-style: dotted; }
+  .body :global(a.missing) { color: var(--dim); border-bottom-style: dashed; }
   .body :global(a.sel) { background: color-mix(in srgb, var(--accent) 18%, transparent); outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 3px; }
   .body :global(.md-html) { font-family: var(--mono); font-size: 0.8em; color: var(--dim); }
   .body :global(.md-display) { display: block; overflow-x: auto; overflow-y: hidden; margin: 0 0 1em; }
