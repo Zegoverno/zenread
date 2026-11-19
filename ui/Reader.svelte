@@ -461,6 +461,15 @@
     follow(a as HTMLAnchorElement);
   }
 
+  /** "Ask zenbot": a draft "About <path>: " in a chat. */
+  async function ask() {
+    if (!store.path || !env.host.ask) return;
+    try {
+      if (await env.host.ask(store.path)) return;
+    } catch { /* told below */ }
+    store.notice('could not start a chat about this note', 3000);
+  }
+
   function goBack() {
     if (!env.standalone && env.host.close?.()) return;
     if (!store.goBack()) close();
@@ -743,6 +752,8 @@
             <button class="nb" onclick={() => sibling(1)} disabled={!hasNext} title="next note in this folder (n)" aria-label="Next note">›</button>
           </div>
         {/if}
+        {#if env.host.editNote}<button class="rb" onclick={() => store.path && env.host.editNote?.(store.path)} title="Edit this note">Edit</button>{/if}
+        {#if env.host.ask}<button class="rb pri" onclick={ask} title="Ask zenbot about this note">Ask zenbot</button>{/if}
         <button class="aa" class:on={aids} onclick={() => (aids = !aids)} title="reading aids" aria-expanded={aids}>Aa</button>
       </div>
     {:else}
@@ -754,9 +765,6 @@
     {/if}
     <div class="tools" class:hidden={inZen && !aids} role="toolbar" aria-label="reader">
       {#if !inZen}<button onclick={goBack} title={canBack ? 'back (← or backspace)' : 'close (esc)'}>{canBack ? '←' : '✕'}</button>{/if}
-      {#if !env.standalone && env.host.editNote}
-        <button onclick={() => store.path && env.host.editNote?.(store.path)} title="Edit in host">Edit</button>
-      {/if}
       {#if !inZen}
         <button onclick={() => sibling(-1)} disabled={!hasPrev} title="previous file in this folder (N)">‹ prev</button>
         {#if doc?.at && (doc.count ?? 0) > 1}<span class="val dim" title="place in this folder">{doc.at} of {doc.count}</span>{/if}
@@ -873,6 +881,11 @@
   .top { flex: none; padding: 8px 14px 6px; border-bottom: 1px solid var(--faint); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
   .zbar { display: flex; align-items: center; gap: 8px; min-height: 28px; }
   .zbar .sp { flex: 1; }
+  .rb { padding: 3px 12px; border-radius: var(--r-full); font-size: 13px; font-weight: 600; border: 1px solid var(--faint); white-space: nowrap; }
+  .rb:hover { border-color: var(--dim); }
+  .rb.pri { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent); }
+  .rb.pri:hover { filter: brightness(1.06); }
+  .zbar { flex-wrap: wrap; }
   .zbar .aa { padding: 3px 10px; border-radius: var(--r-full); border: 1px solid var(--faint); color: var(--dim); font-family: var(--heading); font-size: 13px; }
   .zbar .aa:hover { color: var(--ink); border-color: var(--dim); }
   .zbar .aa.on { color: var(--accent); border-color: var(--accent); }

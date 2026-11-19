@@ -88,6 +88,11 @@ const host: HostAdapter = {
       app.openLink({ url: `zen://open?path=${encodeURIComponent(path)}&mode=edit` }).catch(() => {});
     };
   },
+  get ask() {
+    if (!zenHost()) return undefined;
+    // A draft, not a send: the user finishes the question and sends it.
+    return async (path: string) => !(await app.sendMessage({ role: 'user', content: [{ type: 'text', text: `About ${path}: ` }] })).isError;
+  },
   get setTask() {
     if (!zenHost()) return undefined;
     return async (id: string, done: boolean) => !(await app.openLink({ url: taskUrl(id, done) })).isError;

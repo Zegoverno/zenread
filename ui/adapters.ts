@@ -48,6 +48,8 @@ export interface HostAdapter {
   openWeb(url: string): void;
   close?(): boolean;
   editNote?(path: string): void;
+  /** Put a draft about a note in a chat with zenbot (the host opens a new chat when none is open). */
+  ask?(path: string): Promise<boolean>;
   /** Tick or untick a task (zenbot owns the file): true when the host did it. Absent where it cannot. */
   setTask?(id: string, done: boolean): Promise<boolean>;
   /** Hand a note to the host to open (zenbot); true when it took it, false to open it here. */
