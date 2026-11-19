@@ -12,6 +12,7 @@
   import { DIMS, WPM, keep, nextDim, nextFocus, widen as widthStep } from '../core/settings.ts';
   import type { ReaderSettings } from '../core/settings.ts';
   import { chips, dwell, orp, properties, slug, sourceLink } from '../core/text.ts';
+  import { taskId } from '../core/tasks.ts';
   import { zen } from './zen.svelte.ts';
 
   let { store, env }: { store: Store; env: Env } = $props();
@@ -159,6 +160,8 @@
     logHost.replaceChildren(...(log ? [log] : []));
     hasLog = !!log && (log.textContent ?? '').trim() !== '';
     if (!hasLog) showLog = false;
+    // Tasks can be ticked where the host does it (zenbot); elsewhere the boxes stay as read-only marks.
+    if (env.host.setTask) for (const box of body.querySelectorAll<HTMLInputElement>('li.md-task[data-line] > p > input[type=checkbox]')) box.disabled = false;
     us = units(body);
     us.forEach((u) => u.classList.add('u'));
     links = [...body.querySelectorAll('a')];
@@ -419,6 +422,25 @@
     const want = slug(id);
     const h = [...(host?.querySelectorAll('h1, h2, h3, h4, h5, h6') ?? [])].find((e) => slug(e.textContent ?? '') === want);
     if (h && scroller) scroller.scrollTop = Math.max(0, box(h).top - 12);
+  }
+
+  /** A task box was ticked: show it at once, ask the host, and put it back if the host could not. */
+  async function onTick(e: Event) {
+    const box = e.target as HTMLInputElement;
+    const li = box.closest<HTMLElement>('li.md-task[data-line]');
+    if (box.type !== 'checkbox' || !li || !env.host.setTask) return;
+    const done = box.checked;
+    const id = taskId(path, Number(li.dataset.line), li.dataset.tid);
+    li.classList.toggle('md-done', done);
+    let ok = false;
+    try {
+      ok = await env.host.setTask(id, done);
+    } catch { /* the host could not: put it back */ }
+    if (!ok) {
+      box.checked = !done;
+      li.classList.toggle('md-done', !done);
+      store.notice('could not tick that task', 3000);
+    }
   }
 
   function onClick(e: MouseEvent) {
@@ -770,7 +792,7 @@
           </button>
         {/if}
       {/if}
-      <div class="body" bind:this={host} onclick={onClick} role="presentation">
+      <div class="body" bind:this={host} onclick={onClick} onchange={onTick} role="presentation">
       </div>
       {#if mark}<span class="mark" style:top="{mark.top}px" style:height="{mark.height}px"></span>{/if}
     </div>
@@ -872,7 +894,8 @@
   .body :global(ul), .body :global(ol) { margin: 0 0 0.9em; padding-left: 1.4em; }
   .body :global(li > p) { margin: 0 0 0.25em; }
   .body :global(li.md-task) { list-style: none; }
-  .body :global(li.md-task input) { margin: 0 0.4em 0 -1.3em; }
+  .body :global(li.md-task input) { margin: 0 0.4em 0 -1.3em; accent-color: var(--accent-fill); }
+  .body :global(li.md-task input:not(:disabled)) { cursor: pointer; }
   .body :global(li.md-done) { color: var(--dim); }
   .body :global(blockquote) { margin: 0 0 0.9em; padding-left: 1em; border-left: 3px solid var(--faint); color: color-mix(in srgb, var(--ink) 80%, var(--paper)); }
   .body :global(.md-callout) { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); padding: 0.5em 0.9em; border-radius: 4px; }

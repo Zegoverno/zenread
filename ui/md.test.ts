@@ -61,4 +61,18 @@ describe('render', () => {
     expect(el.querySelector('span.md-math')?.textContent).toBe('a^2');
     expect(el.querySelector('div.md-display')?.textContent).toBe('x = 1');
   });
+  it('tells each task item its line in the file, front matter counted, and its 🆔', () => {
+    const el = html('---\ntitle: T\ntags: [a]\n---\n# Plan\n\n- [ ] first\n- [x] second 🆔 id-2\n  - [ ] nested\n\nText\n\n- plain\n');
+    const tasks = [...el.querySelectorAll<HTMLElement>('li.md-task')];
+    expect(tasks.map((t) => t.dataset.line)).toEqual(['7', '8', '9']);
+    expect(tasks.map((t) => t.dataset.tid)).toEqual([undefined, 'id-2', undefined]);
+    expect(tasks[1].classList.contains('md-done')).toBe(true);
+    expect(el.querySelector('li:not(.md-task)')?.hasAttribute('data-line')).toBe(false);
+  });
+
+  it('counts lines from the top when there is no front matter, also inside a quote', () => {
+    const el = html('- [ ] a\n- [ ] b\n\n> [!note] Hi\n> - [ ] inside\n');
+    const lines = [...el.querySelectorAll<HTMLElement>('li.md-task')].map((t) => t.dataset.line);
+    expect(lines).toEqual(['1', '2', '5']);
+  });
 });

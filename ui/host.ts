@@ -16,6 +16,7 @@ import type { Env, HostAdapter, Listing, NoteDoc, SettingsAdapter, Source } from
 import App_ from './App.svelte';
 import { createStore } from './store.svelte.ts';
 import { DEFAULTS, normalize } from '../core/settings.ts';
+import { taskUrl } from '../core/tasks.ts';
 import { VERSION } from '../core/version.ts';
 import { applyZen, zenOf } from './zen.svelte.ts';
 
@@ -82,6 +83,10 @@ const host: HostAdapter = {
     return (path: string) => {
       app.openLink({ url: `zen://open?path=${encodeURIComponent(path)}&mode=edit` }).catch(() => {});
     };
+  },
+  get setTask() {
+    if (!zenHost()) return undefined;
+    return async (id: string, done: boolean) => !(await app.openLink({ url: taskUrl(id, done) })).isError;
   },
   openWeb(url) {
     app.openLink({ url }).catch(() => {});
