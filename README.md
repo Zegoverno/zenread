@@ -8,7 +8,7 @@ A calm reader for Markdown notes, with reading aids. One code base, three ways t
 - an **MCP App**: the reader as an inline widget in Claude, ChatGPT and any host that supports
   [MCP Apps](https://modelcontextprotocol.io/docs/extensions/apps), with tools the agent can call.
 
-MIT licensed. No account, no telemetry, no network calls. It reads Markdown only and never writes to your files.
+MIT licensed. No account, no telemetry, no network calls. It reads Markdown; in zenbot, ticking a task asks the host to update it.
 
 ## Read
 
@@ -55,7 +55,7 @@ zen plugins add zenread
 ```
 
 or open **Settings → Marketplace** in zenbot's web app and install it there. To try a build first:
-`zen plugins add ./zenread-0.1.1.tgz`. zenbot shows the permission below and asks you to approve it.
+`zen plugins add ./zenread-0.2.0.tgz`. zenbot shows the permission below and asks you to approve it.
 
 It lives in **Files**, not a separate Reading tab. It adds an opener for `*.md` files in read mode (set it as the default in
 **Settings → Plugins**; until then the built-in reader stays the default), and the `/read <path>`
@@ -65,7 +65,7 @@ Changes to a note on disk show up in the reader within a couple of seconds.
 
 **Permission: `files:read`.** The server reads notes under the folder zenbot gives it
 (`ZEN_PLUGIN_FILES`) and keeps the reading settings in its own data folder (`ZEN_PLUGIN_DATA`). It has no
-network and cannot write your files.
+network and cannot write your files itself; task ticks are handed to the host.
 
 ## Use it in Claude, ChatGPT or another MCP Apps host
 
