@@ -17,6 +17,9 @@ export interface NoteDoc {
   mtime: number;
   prev: string | null;
   next: string | null;
+  /** Its place (from 1) among the `count` notes of its folder, when the source says. */
+  at?: number;
+  count?: number;
   /** Where each link of the note points: `[[target]]` or the relative href → note path, or null. */
   resolved: Record<string, string | null>;
 }

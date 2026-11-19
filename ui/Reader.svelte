@@ -69,9 +69,14 @@
 
   const hasPrev = $derived(!!doc?.prev);
   const hasNext = $derived(!!doc?.next);
-  function sibling(d: 1 | -1) {
+  async function sibling(d: 1 | -1) {
     const to = d > 0 ? doc?.next : doc?.prev;
-    if (to) store.open(to, { fresh: true });
+    if (!to) return;
+    // In zenbot the host's title bar names the file: let it open the neighbour, which it then tells us.
+    try {
+      if (env.host.openNote && (await env.host.openNote(to))) return;
+    } catch { /* the host could not: open it here */ }
+    store.open(to, { fresh: true });
   }
 
   // ---- loading ----
@@ -731,6 +736,13 @@
       <div class="zbar">
         {#if doc}<span class="dim zprog" data-testid="progress">{pct}%{#if wordsLeft} · {minutes} min left{/if}</span>{/if}
         <span class="sp"></span>
+        {#if doc?.at && (doc.count ?? 0) > 1}
+          <div class="sib" role="group" aria-label="notes in this folder">
+            <button class="nb" onclick={() => sibling(-1)} disabled={!hasPrev} title="previous note in this folder (N)" aria-label="Previous note">‹</button>
+            <span class="cnt" data-testid="count" title={`${folder || store.label || 'Notes'}: ${doc.at} of ${doc.count}`}>{doc.at} of {doc.count}</span>
+            <button class="nb" onclick={() => sibling(1)} disabled={!hasNext} title="next note in this folder (n)" aria-label="Next note">›</button>
+          </div>
+        {/if}
         <button class="aa" class:on={aids} onclick={() => (aids = !aids)} title="reading aids" aria-expanded={aids}>Aa</button>
       </div>
     {:else}
@@ -745,8 +757,11 @@
       {#if !env.standalone && env.host.editNote}
         <button onclick={() => store.path && env.host.editNote?.(store.path)} title="Edit in host">Edit</button>
       {/if}
-      <button onclick={() => sibling(-1)} disabled={!hasPrev} title="previous file in this folder (N)">‹ prev</button>
-      <button onclick={() => sibling(1)} disabled={!hasNext} title="next file in this folder (n)">next ›</button>
+      {#if !inZen}
+        <button onclick={() => sibling(-1)} disabled={!hasPrev} title="previous file in this folder (N)">‹ prev</button>
+        {#if doc?.at && (doc.count ?? 0) > 1}<span class="val dim" title="place in this folder">{doc.at} of {doc.count}</span>{/if}
+        <button onclick={() => sibling(1)} disabled={!hasNext} title="next file in this folder (n)">next ›</button>
+      {/if}
       <span class="sep"></span>
       <button onclick={() => widen(-1)} title="narrower (<)" disabled={set.width === 60}>‹</button>
       <span class="val" title="line width" data-testid="width">{set.width || 'full'}</span>
@@ -862,6 +877,11 @@
   .zbar .aa:hover { color: var(--ink); border-color: var(--dim); }
   .zbar .aa.on { color: var(--accent); border-color: var(--accent); }
   .zprog { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .sib { display: flex; align-items: center; border: 1px solid var(--faint); border-radius: var(--r-full); }
+  .sib .nb { width: 28px; height: 26px; font-size: 18px; line-height: 1; color: var(--dim); border-radius: var(--r-full); }
+  .sib .nb:hover:not(:disabled) { color: var(--ink); background: var(--soft); }
+  .sib .nb:disabled { opacity: 0.35; }
+  .sib .cnt { font-size: 12px; color: var(--dim); padding: 0 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .top.zen { border-bottom-color: transparent; }
   .title { display: flex; align-items: baseline; gap: 0; min-width: 0; white-space: nowrap; }
   .title .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 3em; }

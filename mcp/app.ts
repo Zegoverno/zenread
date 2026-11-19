@@ -84,7 +84,7 @@ export function createServer(opts: Options = {}): McpServer {
     const resolved = resolveAll(f.path, body, await files!.index());
     return {
       path: f.path, name: f.path.split('/').pop()!, text: f.text, frontMatter: front, properties: props, source: sourceLink(props),
-      words: countWords(body), size: f.size, mtime: f.mtime, prev: f.prev, next: f.next, resolved,
+      words: countWords(body), size: f.size, mtime: f.mtime, prev: f.prev, next: f.next, at: f.at, count: f.count, resolved,
     };
   }
   const guard = async <T>(fn: () => Promise<T>) => {
@@ -116,7 +116,7 @@ export function createServer(opts: Options = {}): McpServer {
 
   server.registerTool('zenread_read', {
     title: 'Read a note',
-    description: 'A Markdown note\'s text, with its front matter (raw and as properties), its web link when the front matter has one (link, url or source), its neighbours (the notes before and after it in its folder) and where each [[wiki link]] and relative .md link points (null when the note is not found). `path` is relative to the files folder.',
+    description: 'A Markdown note\'s text, with its front matter (raw and as properties), its web link when the front matter has one (link, url or source), its neighbours (the notes before and after it in its folder, its place `at` among the `count` notes there) and where each [[wiki link]] and relative .md link points (null when the note is not found). `path` is relative to the files folder.',
     inputSchema: { path: z.string().max(1000).describe('Path of the note, relative to the files folder.') },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async ({ path: p }) => guard(async () => {

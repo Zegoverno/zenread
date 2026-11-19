@@ -71,11 +71,19 @@ describe('collecting and resolving', () => {
 
 describe('neighbours', () => {
   it('order a folder naturally and give the note before and after', () => {
-    expect(neighbours('notes/day2.md', files)).toEqual({ prev: 'notes/day1.md', next: 'notes/day10.md' });
+    expect(neighbours('notes/day2.md', files)).toMatchObject({ prev: 'notes/day1.md', next: 'notes/day10.md' });
     expect(neighbours('notes/day1.md', files).prev).toBeNull();
     expect(neighbours('notes/soil.md', files).next).toBeNull();
-    expect(neighbours('index.md', files)).toEqual({ prev: null, next: null });
-    expect(neighbours('missing.md', files)).toEqual({ prev: null, next: null });
+    expect(neighbours('index.md', files)).toMatchObject({ prev: null, next: null });
+    expect(neighbours('missing.md', files)).toMatchObject({ prev: null, next: null, at: 0 });
+  });
+  it('say where the note stands: its place and how many notes the folder has', () => {
+    const n = neighbours('notes/day2.md', files);
+    expect(n.at).toBe(2);
+    expect(n.count).toBe(4); // day1, day2, day10, soil (the .txt is not a note)
+    expect(neighbours('notes/day1.md', files).at).toBe(1);
+    expect(neighbours('notes/day10.md', files).at).toBe(3);
+    expect(neighbours('index.md', files)).toMatchObject({ at: 1, count: 1 });
   });
   it('sort names naturally', () => {
     expect(['b10.md', 'B2.md', 'a.md'].sort(byName)).toEqual(['a.md', 'B2.md', 'b10.md']);

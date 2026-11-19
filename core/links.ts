@@ -95,12 +95,13 @@ export const wikiKey = (target: string): string => `[[${target}]]`;
 /** Natural, case-insensitive order of file names: `note2` before `note10`. */
 export const byName = (a: string, b: string): number => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' }) || (a < b ? -1 : a > b ? 1 : 0);
 
-/** The notes in a folder, in reading order, and the ones before and after `path`. */
-export function neighbours(path: string, files: readonly string[]): { prev: string | null; next: string | null } {
+/** The notes in a folder, in reading order: the ones before and after `path`, its place among them
+ *  (`at`, counted from 1; 0 when it is not one of them) and how many there are (`count`). */
+export function neighbours(path: string, files: readonly string[]): { prev: string | null; next: string | null; at: number; count: number } {
   const dir = dirOf(path);
   const peers = files.filter((f) => isNote(f) && dirOf(f) === dir).sort((a, b) => byName(base(a), base(b)));
   const i = peers.indexOf(path);
-  return i < 0 ? { prev: null, next: null } : { prev: peers[i - 1] ?? null, next: peers[i + 1] ?? null };
+  return i < 0 ? { prev: null, next: null, at: 0, count: peers.length } : { prev: peers[i - 1] ?? null, next: peers[i + 1] ?? null, at: i + 1, count: peers.length };
 }
 
 /** Resolves every link of `markdown` against `files`: each `collectRefs` key to a note path, or null. */

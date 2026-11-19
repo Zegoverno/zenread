@@ -19,7 +19,7 @@ export class FileError extends Error {}
 export interface Entry { name: string; path: string }
 export interface FileEntry extends Entry { size: number; mtime: number }
 export interface Listing { dir: string; folders: Entry[]; files: FileEntry[]; truncated: boolean }
-export interface NoteFile { path: string; text: string; size: number; mtime: number; prev: string | null; next: string | null }
+export interface NoteFile { path: string; text: string; size: number; mtime: number; prev: string | null; next: string | null; at: number; count: number }
 
 const hidden = (name: string) => name.startsWith('.');
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);

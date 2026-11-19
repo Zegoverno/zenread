@@ -49,6 +49,8 @@ describe('reading', () => {
     expect(n.prev).toBe('notes/b.md');
     expect(n.next).toBe('notes/c10.md');
     expect((await files.read('index.md')).next).toBeNull();
+    expect(n).toMatchObject({ at: 4, count: 5 }); // a, alias, b, c2, c10 (the link out and the broken link are not listed)
+    expect(await files.read('notes/a.md')).toMatchObject({ at: 1, count: 5, prev: null });
   });
   it('lists a folder: notes and folders only, no dot entries, no links out', async () => {
     const root = await files.list();
