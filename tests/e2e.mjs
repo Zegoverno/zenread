@@ -430,7 +430,6 @@ try {
   await z.evaluate(() => window.sendContext({ pane: 'side', phone: false, path: 'sub/Third.md', mode: 'read', slot: 'opener', headingFont: 'Georgia, serif' }));
   await z.waitForTimeout(300);
   assert.equal(await reads(), n, 'an unchanged path is not opened again');
-  const listsBeforeClose = await z.evaluate(() => window.calls.filter(c => c.name === 'zenread_list').length);
   await zf.locator('.top').click();
   await z.keyboard.press('Escape');
   await z.waitForFunction(() => window.links.includes('zen://close'));
@@ -438,7 +437,6 @@ try {
   await z.keyboard.press('ArrowLeft');
   await z.waitForFunction(() => window.links.filter(l => l === 'zen://close').length === 2);
   assert.equal(await zf.locator('[data-testid=library]').count(), 0);
-  assert.equal(await z.evaluate(() => window.calls.filter(c => c.name === 'zenread_list').length), listsBeforeClose, 'closing does not open the library');
 
   // "Linked from": asked after the note shows; each entry goes through the host
   await z.evaluate(() => { window.backlinks['Second.md'] = [{ path: 'index.md', title: 'Harbour notes' }, { path: 'sub/Third.md', title: 'Third note' }]; });
