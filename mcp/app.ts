@@ -4,6 +4,7 @@
 //   zenread_read      a note's Markdown, front matter, neighbours (the .md files before and after it in
 //                    its folder) and where its links point
 //   zenread_list      the Markdown notes and folders in a folder
+//   zenread_backlinks the notes that link to a note ("Linked from")
 //   zenread_settings  app only: the reading aids' settings, kept in the plugin's data folder
 //
 // Files are read-only and confined to ZEN_PLUGIN_FILES (see files.ts). Without it, file tools say so.
@@ -17,6 +18,7 @@ import { DEFAULTS, normalize } from '../core/settings.ts';
 import type { ReaderSettings } from '../core/settings.ts';
 import { VERSION } from '../core/version.ts';
 import { countWords, properties, sourceLink, splitFront } from '../core/text.ts';
+import { Backlinks } from './backlinks.ts';
 import { FileError, Files } from './files.ts';
 
 export const UI_URI = 'ui://zenread/app';
@@ -69,6 +71,7 @@ export function createServer(opts: Options = {}): McpServer {
   let files: Files | null = null;
   let rootError = '';
   if (root) try { files = new Files(root); } catch (e) { rootError = (e as Error).message; }
+  const backlinks = files ? new Backlinks(files) : null;
   const settings = settingsStore(dataDir);
 
   const server = new McpServer({ name: 'zenread', version: VERSION });
@@ -81,7 +84,7 @@ export function createServer(opts: Options = {}): McpServer {
     const resolved = resolveAll(f.path, body, await files!.index());
     return {
       path: f.path, name: f.path.split('/').pop()!, text: f.text, frontMatter: front, properties: props, source: sourceLink(props),
-      words: countWords(body), size: f.size, mtime: f.mtime, prev: f.prev, next: f.next, resolved,
+      words: countWords(body), size: f.size, mtime: f.mtime, prev: f.prev, next: f.next, at: f.at, count: f.count, resolved,
     };
   }
   const guard = async <T>(fn: () => Promise<T>) => {
@@ -113,7 +116,7 @@ export function createServer(opts: Options = {}): McpServer {
 
   server.registerTool('zenread_read', {
     title: 'Read a note',
-    description: 'A Markdown note\'s text, with its front matter (raw and as properties), its web link when the front matter has one (link, url or source), its neighbours (the notes before and after it in its folder) and where each [[wiki link]] and relative .md link points (null when the note is not found). `path` is relative to the files folder.',
+    description: 'A Markdown note\'s text, with its front matter (raw and as properties), its web link when the front matter has one (link, url or source), its neighbours (the notes before and after it in its folder, its place `at` among the `count` notes there) and where each [[wiki link]] and relative .md link points (null when the note is not found). `path` is relative to the files folder.',
     inputSchema: { path: z.string().max(1000).describe('Path of the note, relative to the files folder.') },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async ({ path: p }) => guard(async () => {
@@ -130,6 +133,17 @@ export function createServer(opts: Options = {}): McpServer {
     const l = await files!.list(dir ?? '');
     const lines = [...l.folders.map((f) => `${f.path}/`), ...l.files.map((f) => f.path)];
     return reply(`${l.dir || '(root)'}: ${l.folders.length} folder(s), ${l.files.length} note(s)${l.truncated ? ' (list cut short)' : ''}\n${lines.join('\n')}`, { ...l });
+  }));
+
+  server.registerTool('zenread_backlinks', {
+    title: 'Linked from',
+    description: 'The notes that link to a note: a [[wiki link]] written as its file name or its title, or a relative .md link, found by reading every note in the files folder. Returns `backlinks`, a list of {path, title}, by title. `path` is relative to the files folder.',
+    inputSchema: { path: z.string().max(1000).describe('Path of the note, relative to the files folder.') },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, async ({ path: p }) => guard(async () => {
+    const f = await files!.text(p);
+    const list = await backlinks!.to(f.path);
+    return reply(list.length ? `${list.length} note(s) link to ${f.path}:\n${list.map((b) => `${b.path} (${b.title})`).join('\n')}` : `No note links to ${f.path}.`, { path: f.path, backlinks: list });
   }));
 
   registerAppTool(server, 'zenread_settings', {

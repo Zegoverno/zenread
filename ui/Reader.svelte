@@ -4,14 +4,16 @@
   // play, one word at a time. The notes come from a Source (a folder, a host's tools, memory) and the
   // settings from the store, so the same component runs as the PWA and as an MCP App.
   import { onDestroy, onMount, tick, untrack } from 'svelte';
-  import type { Env, NoteDoc } from './adapters.ts';
+  import type { Backlink, Env, NoteDoc } from './adapters.ts';
   import type { Store } from './store.svelte.ts';
   import { render } from './md.ts';
   import { bionic, takeChangelog, units, lines, wrapWords } from './dom.ts';
   import { anchorOf, dirOf, resolveRelative, wikiKey } from '../core/links.ts';
   import { DIMS, WPM, keep, nextDim, nextFocus, widen as widthStep } from '../core/settings.ts';
   import type { ReaderSettings } from '../core/settings.ts';
-  import { dwell, orp, properties, slug, sourceLink } from '../core/text.ts';
+  import { chips, dwell, orp, properties, slug, sourceLink } from '../core/text.ts';
+  import { taskId } from '../core/tasks.ts';
+  import { zen } from './zen.svelte.ts';
 
   let { store, env }: { store: Store; env: Env } = $props();
   const path = $derived(store.path ?? '');
@@ -20,6 +22,8 @@
   let doc = $state<NoteDoc | null>(null);
   let error = $state('');
   let loading = $state(true);
+  /** The notes that link here ("Linked from"), once the source has said; empty when it cannot. */
+  let linked = $state<Backlink[]>([]);
 
   let scroller = $state<HTMLDivElement>();
   let host = $state<HTMLDivElement>();
@@ -27,6 +31,8 @@
   let logHost = $state<HTMLDivElement>();
 
   let fm = $state<[string, string][]>([]);
+  /** In zenbot: the note's title (its first heading, else the title property, else the file name). */
+  let title = $state('');
   let propsOpen = $state(false);
   let hasLog = $state(false);
   let showLog = $state(false);
@@ -53,14 +59,24 @@
   const k = $derived(keep(set.dim));
   const focusing = $derived(set.focus !== 'off' && !play);
   const canBack = $derived(store.back.length > 0);
+  // In zenbot the host draws the pane's title bar and close ×; the reader keeps only its own tools,
+  // behind "Aa" (the reading aids), so a phone's pane stays calm.
+  const inZen = $derived(zen.active);
+  let aids = $state(false);
+  const zchips = $derived(chips(fm));
 
   // ---- the folder's other notes (previous / next, from the source) ----
 
   const hasPrev = $derived(!!doc?.prev);
   const hasNext = $derived(!!doc?.next);
-  function sibling(d: 1 | -1) {
+  async function sibling(d: 1 | -1) {
     const to = d > 0 ? doc?.next : doc?.prev;
-    if (to) store.open(to, { fresh: true });
+    if (!to) return;
+    // In zenbot the host's title bar names the file: let it open the neighbour, which it then tells us.
+    try {
+      if (env.host.openNote && (await env.host.openNote(to))) return;
+    } catch { /* the host could not: open it here */ }
+    store.open(to, { fresh: true });
   }
 
   // ---- loading ----
@@ -98,6 +114,9 @@
     error = '';
     doc = d;
     loading = false;
+    if (!again) linked = [];
+    // After the note is shown: the scan for backlinks may take a moment and must not delay the text.
+    store.source!.backlinks?.(p).then((l) => { if (n === seq) linked = l; }, () => { if (n === seq) linked = []; });
     if (!again) {
       linkSel = -1;
       focusAt = -1;
@@ -135,6 +154,11 @@
     const r = render(d.text);
     const body = r.el;
     fm = r.front ? properties(r.front) : [];
+    const first = body.firstElementChild;
+    if (inZen && first?.tagName === 'H1' && (first.textContent ?? '').trim()) {
+      title = first.textContent!.trim();
+      first.remove();
+    } else title = fm.find(([k]) => k.toLowerCase() === 'title')?.[1] || name.replace(/\.(md|markdown)$/i, '');
     const log = takeChangelog(body);
     words = wrapWords(body);
     nWords = words.length;
@@ -146,9 +170,12 @@
     logHost.replaceChildren(...(log ? [log] : []));
     hasLog = !!log && (log.textContent ?? '').trim() !== '';
     if (!hasLog) showLog = false;
+    // Tasks can be ticked where the host does it (zenbot); elsewhere the boxes stay as read-only marks.
+    if (env.host.setTask) for (const box of body.querySelectorAll<HTMLInputElement>('li.md-task[data-line] > p > input[type=checkbox]')) box.disabled = false;
     us = units(body);
     us.forEach((u) => u.classList.add('u'));
     links = [...body.querySelectorAll('a')];
+    for (const a of links) if (a.dataset.wiki !== undefined && d.resolved[wikiKey(a.dataset.wiki)] === null) a.classList.add('missing');
     logUnits = log ? units(log) : [];
     paintFocus();
     if (play) paintWord();
@@ -408,11 +435,39 @@
     if (h && scroller) scroller.scrollTop = Math.max(0, box(h).top - 12);
   }
 
+  /** A task box was ticked: show it at once, ask the host, and put it back if the host could not. */
+  async function onTick(e: Event) {
+    const box = e.target as HTMLInputElement;
+    const li = box.closest<HTMLElement>('li.md-task[data-line]');
+    if (box.type !== 'checkbox' || !li || !env.host.setTask) return;
+    const done = box.checked;
+    const id = taskId(path, Number(li.dataset.line), li.dataset.tid);
+    li.classList.toggle('md-done', done);
+    let ok = false;
+    try {
+      ok = await env.host.setTask(id, done);
+    } catch { /* the host could not: put it back */ }
+    if (!ok) {
+      box.checked = !done;
+      li.classList.toggle('md-done', !done);
+      store.notice('could not tick that task', 3000);
+    }
+  }
+
   function onClick(e: MouseEvent) {
     const a = (e.target as HTMLElement).closest('a');
     if (!a) return;
     e.preventDefault(); // web links go through the host too: a sandboxed frame cannot open a tab itself
     follow(a as HTMLAnchorElement);
+  }
+
+  /** "Ask zenbot": a draft "About <path>: " in a chat. */
+  async function ask() {
+    if (!store.path || !env.host.ask) return;
+    try {
+      if (await env.host.ask(store.path)) return;
+    } catch { /* told below */ }
+    store.notice('could not start a chat about this note', 3000);
   }
 
   function goBack() {
@@ -685,19 +740,36 @@
 <svelte:window onkeydown={key} />
 
 <div class="reader prose" class:spaced={set.spaced} style:--keep={k} data-testid="reader">
-  <div class="top">
-    <div class="title">
-      <span class="name">{name}</span>
-      {#if doc}<span class="dim">&nbsp;·&nbsp;{pct}%{#if wordsLeft}&nbsp;·&nbsp;{minutes} min left{/if}</span>{/if}
-      <span class="folder dim" title={folder || 'the folder'}><bdi>{folder || store.label}</bdi></span>
-    </div>
-    <div class="tools" role="toolbar" aria-label="reader">
-      <button onclick={goBack} title={canBack ? 'back (← or backspace)' : 'close (esc)'}>{canBack ? '←' : '✕'}</button>
-      {#if !env.standalone && env.host.editNote}
-        <button onclick={() => store.path && env.host.editNote?.(store.path)} title="Edit in host">Edit</button>
+  <div class="top" class:zen={inZen}>
+    {#if inZen}
+      <div class="zbar">
+        {#if doc}<span class="dim zprog" data-testid="progress">{pct}%{#if wordsLeft} · {minutes} min left{/if}</span>{/if}
+        <span class="sp"></span>
+        {#if doc?.at && (doc.count ?? 0) > 1}
+          <div class="sib" role="group" aria-label="notes in this folder">
+            <button class="nb" onclick={() => sibling(-1)} disabled={!hasPrev} title="previous note in this folder (N)" aria-label="Previous note">‹</button>
+            <span class="cnt" data-testid="count" title={`${folder || store.label || 'Notes'}: ${doc.at} of ${doc.count}`}>{doc.at} of {doc.count}</span>
+            <button class="nb" onclick={() => sibling(1)} disabled={!hasNext} title="next note in this folder (n)" aria-label="Next note">›</button>
+          </div>
+        {/if}
+        {#if env.host.editNote}<button class="rb" onclick={() => store.path && env.host.editNote?.(store.path)} title="Edit this note">Edit</button>{/if}
+        {#if env.host.ask}<button class="rb pri" onclick={ask} title="Ask zenbot about this note">Ask zenbot</button>{/if}
+        <button class="aa" class:on={aids} onclick={() => (aids = !aids)} title="reading aids" aria-expanded={aids}>Aa</button>
+      </div>
+    {:else}
+      <div class="title">
+        <span class="name">{name}</span>
+        {#if doc}<span class="dim">&nbsp;·&nbsp;{pct}%{#if wordsLeft}&nbsp;·&nbsp;{minutes} min left{/if}</span>{/if}
+        <span class="folder dim" title={folder || 'the folder'}><bdi>{folder || store.label}</bdi></span>
+      </div>
+    {/if}
+    <div class="tools" class:hidden={inZen && !aids} role="toolbar" aria-label="reader">
+      {#if !inZen}<button onclick={goBack} title={canBack ? 'back (← or backspace)' : 'close (esc)'}>{canBack ? '←' : '✕'}</button>{/if}
+      {#if !inZen}
+        <button onclick={() => sibling(-1)} disabled={!hasPrev} title="previous file in this folder (N)">‹ prev</button>
+        {#if doc?.at && (doc.count ?? 0) > 1}<span class="val dim" title="place in this folder">{doc.at} of {doc.count}</span>{/if}
+        <button onclick={() => sibling(1)} disabled={!hasNext} title="next file in this folder (n)">next ›</button>
       {/if}
-      <button onclick={() => sibling(-1)} disabled={!hasPrev} title="previous file in this folder (N)">‹ prev</button>
-      <button onclick={() => sibling(1)} disabled={!hasNext} title="next file in this folder (n)">next ›</button>
       <span class="sep"></span>
       <button onclick={() => widen(-1)} title="narrower (<)" disabled={set.width === 60}>‹</button>
       <span class="val" title="line width" data-testid="width">{set.width || 'full'}</span>
@@ -729,7 +801,16 @@
 
   <div class="scroll" bind:this={scroller} onscroll={onScroll} class:hidden={!doc}>
     <div class="rpage" style:max-width={set.width ? `calc(${set.width}ch + 48px)` : 'none'} class:focusing class:playing={!!play}>
-      {#if fm.length}
+      {#if inZen}
+        <h1 class="ztitle" data-testid="title">{title}</h1>
+        {#if zchips.length}
+          <div class="chips" data-testid="chips">
+            {#each zchips as c}
+              {#if c.tag}<span class="chip tag">#{c.value}</span>{:else}<span class="chip" title={c.key}>{#if c.key.toLowerCase() !== 'type'}<em>{c.key}</em>{/if}{c.value}</span>{/if}
+            {/each}
+          </div>
+        {/if}
+      {:else if fm.length}
         {#if propsOpen}
           <button class="fm open" onclick={() => (propsOpen = false)} title="fold (i)">
             {#each fm as [key, v]}<span class="pk">{key}</span><span class="pv">{v}</span>{/each}
@@ -740,8 +821,18 @@
           </button>
         {/if}
       {/if}
-      <div class="body" bind:this={host} onclick={onClick} role="presentation">
+      <div class="body" bind:this={host} onclick={onClick} onchange={onTick} role="presentation">
       </div>
+      {#if linked.length}
+        <nav class="linked" aria-label="Linked from" data-testid="linked">
+          <div class="lh">Linked from</div>
+          {#each linked as b (b.path)}
+            <button class="ll" onclick={() => void store.follow(b.path)} title={b.path}>
+              <span>{b.title}</span><small>{dirOf(b.path) || store.label || 'Vault'}</small>
+            </button>
+          {/each}
+        </nav>
+      {/if}
       {#if mark}<span class="mark" style:top="{mark.top}px" style:height="{mark.height}px"></span>{/if}
     </div>
   </div>
@@ -788,6 +879,23 @@
 <style>
   .reader { height: 100%; min-height: 0; display: flex; flex-direction: column; background: var(--paper); color: var(--ink); position: relative; }
   .top { flex: none; padding: 8px 14px 6px; border-bottom: 1px solid var(--faint); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+  .zbar { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+  .zbar .sp { flex: 1; }
+  .rb { padding: 3px 12px; border-radius: var(--r-full); font-size: 13px; font-weight: 600; border: 1px solid var(--faint); white-space: nowrap; }
+  .rb:hover { border-color: var(--dim); }
+  .rb.pri { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent); }
+  .rb.pri:hover { filter: brightness(1.06); }
+  .zbar { flex-wrap: wrap; }
+  .zbar .aa { padding: 3px 10px; border-radius: var(--r-full); border: 1px solid var(--faint); color: var(--dim); font-family: var(--heading); font-size: 13px; }
+  .zbar .aa:hover { color: var(--ink); border-color: var(--dim); }
+  .zbar .aa.on { color: var(--accent); border-color: var(--accent); }
+  .zprog { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .sib { display: flex; align-items: center; border: 1px solid var(--faint); border-radius: var(--r-full); }
+  .sib .nb { width: 28px; height: 26px; font-size: 18px; line-height: 1; color: var(--dim); border-radius: var(--r-full); }
+  .sib .nb:hover:not(:disabled) { color: var(--ink); background: var(--soft); }
+  .sib .nb:disabled { opacity: 0.35; }
+  .sib .cnt { font-size: 12px; color: var(--dim); padding: 0 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .top.zen { border-bottom-color: transparent; }
   .title { display: flex; align-items: baseline; gap: 0; min-width: 0; white-space: nowrap; }
   .title .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 3em; }
   .title > .dim { flex: none; }
@@ -810,18 +918,29 @@
   .spaced .rpage { line-height: 2; }
   .clog .rpage { padding-top: 6px; padding-bottom: 12px; }
 
+  .ztitle { font-family: var(--heading); font-weight: 600; font-size: 1.7em; line-height: 1.2; margin: 0.2em 0 0.35em; overflow-wrap: anywhere; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 1.4em; font-family: var(--sans); }
+  .chip { font-size: 12px; line-height: 1.5; padding: 1px 9px; border-radius: var(--r-full); background: var(--soft); color: var(--ink); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip em { font-style: normal; color: var(--dim); margin-right: 5px; }
+  .chip.tag { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .fm { display: block; width: 100%; text-align: left; color: var(--dim); font-family: var(--sans); font-size: 13px; line-height: 1.6; margin: 0 0 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fm .pk { color: var(--dim); }
   .fm.open { display: grid; grid-template-columns: max-content 1fr; gap: 0 14px; white-space: normal; }
   .fm.open .pv { color: var(--ink); overflow-wrap: anywhere; }
 
+  .linked { margin: 2.2em 0 0; padding-top: 14px; border-top: 1px solid var(--faint); font-family: var(--sans); }
+  .lh { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); font-weight: 650; margin-bottom: 6px; }
+  .ll { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 7px 8px; border-radius: var(--r-md); font-size: 15px; text-align: left; }
+  .ll span { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ll small { margin-left: auto; flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--dim); }
+  .ll:hover { background: var(--soft); }
   .mark { position: absolute; left: 6px; width: 3px; border-radius: 2px; background: var(--accent); }
 
   /* the rendered text */
   .body :global(pre.plain) { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
   .body :global(.md) { overflow-wrap: break-word; }
   .body :global(.md > :first-child) { margin-top: 0; }
-  .body :global(h1), .body :global(h2), .body :global(h3), .body :global(h4), .body :global(h5), .body :global(h6) { font-family: var(--serif); line-height: 1.3; margin: 1.4em 0 0.5em; }
+  .body :global(h1), .body :global(h2), .body :global(h3), .body :global(h4), .body :global(h5), .body :global(h6) { font-family: var(--heading); line-height: 1.3; margin: 1.4em 0 0.5em; }
   .body :global(h1) { font-size: 1.6em; }
   .body :global(h2) { font-size: 1.3em; }
   .body :global(h3) { font-size: 1.12em; }
@@ -830,7 +949,8 @@
   .body :global(ul), .body :global(ol) { margin: 0 0 0.9em; padding-left: 1.4em; }
   .body :global(li > p) { margin: 0 0 0.25em; }
   .body :global(li.md-task) { list-style: none; }
-  .body :global(li.md-task input) { margin: 0 0.4em 0 -1.3em; }
+  .body :global(li.md-task input) { margin: 0 0.4em 0 -1.3em; accent-color: var(--accent-fill); }
+  .body :global(li.md-task input:not(:disabled)) { cursor: pointer; }
   .body :global(li.md-done) { color: var(--dim); }
   .body :global(blockquote) { margin: 0 0 0.9em; padding-left: 1em; border-left: 3px solid var(--faint); color: color-mix(in srgb, var(--ink) 80%, var(--paper)); }
   .body :global(.md-callout) { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); padding: 0.5em 0.9em; border-radius: 4px; }
@@ -846,6 +966,8 @@
   .body :global(img) { max-width: 100%; }
   .body :global(a) { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); cursor: pointer; }
   .body :global(a:hover) { border-bottom-color: var(--accent); }
+  .body :global(a.md-wiki) { border-bottom-style: dotted; }
+  .body :global(a.missing) { color: var(--dim); border-bottom-style: dashed; }
   .body :global(a.sel) { background: color-mix(in srgb, var(--accent) 18%, transparent); outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 3px; }
   .body :global(.md-html) { font-family: var(--mono); font-size: 0.8em; color: var(--dim); }
   .body :global(.md-display) { display: block; overflow-x: auto; overflow-y: hidden; margin: 0 0 1em; }
@@ -877,6 +999,9 @@
   .line .pivot { color: var(--err); }
   .pstat { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px 6px; font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 
+  :global(:root[data-narrow]) .rpage { padding: 14px 16px 30vh; }
+  :global(:root[data-narrow]) .prose .rpage { font-size: 18px; }
+  :global(:root[data-narrow]) .line { font-size: 26px; }
   @media (max-width: 640px) {
     .rpage { padding: 16px 16px 30vh; }
     .prose .rpage { font-size: 18px; }

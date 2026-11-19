@@ -19,7 +19,7 @@ export class FileError extends Error {}
 export interface Entry { name: string; path: string }
 export interface FileEntry extends Entry { size: number; mtime: number }
 export interface Listing { dir: string; folders: Entry[]; files: FileEntry[]; truncated: boolean }
-export interface NoteFile { path: string; text: string; size: number; mtime: number; prev: string | null; next: string | null }
+export interface NoteFile { path: string; text: string; size: number; mtime: number; prev: string | null; next: string | null; at: number; count: number }
 
 const hidden = (name: string) => name.startsWith('.');
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
@@ -27,7 +27,7 @@ const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 export class Files {
   readonly root: string;
   private real: Promise<string>;
-  private notes: { at: number; list: string[] } | null = null;
+  private notes: { at: number; list: FileEntry[] } | null = null;
 
   constructor(root: string) {
     this.root = root;
@@ -91,8 +91,8 @@ export class Files {
     return { dir, folders, files, truncated };
   }
 
-  /** The note and the notes before and after it in its folder. */
-  async read(rel: unknown): Promise<NoteFile> {
+  /** A note's text alone, with the checks of `read`. */
+  async text(rel: unknown): Promise<{ path: string; text: string; size: number; mtime: number }> {
     const p = Files.clean(rel);
     if (!p || !isNote(p)) throw new FileError('The reader opens Markdown notes (.md): give a path to one.');
     const abs = await this.inside(p);
@@ -100,23 +100,35 @@ export class Files {
     if (!s.isFile()) throw new FileError(`Not a file: ${p}`);
     if (s.size > MAX_BYTES) throw new FileError(`${p} is too big to read here (${Math.round(s.size / 1024)} KB; the limit is ${MAX_BYTES / 1024} KB).`);
     const text = (await readFile(abs, 'utf8')).replace(/^﻿/, '');
-    const peers = (await this.list(dirOf(p))).files.map((f) => f.path);
-    return { path: p, text, size: s.size, mtime: Math.floor(s.mtimeMs), ...neighbours(p, peers) };
+    return { path: p, text, size: s.size, mtime: Math.floor(s.mtimeMs) };
   }
 
-  /** Every note under the root (breadth first, capped), for resolving `[[wiki links]]`. Cached for a few seconds. */
-  async index(): Promise<string[]> {
+  /** The note and the notes before and after it in its folder,. */
+  async read(rel: unknown): Promise<NoteFile> {
+    const f = await this.text(rel);
+    const peers = (await this.list(dirOf(f.path))).files.map((e) => e.path);
+    return { ...f, ...neighbours(f.path, peers) };
+  }
+
+  /** Every note under the root with its size and time (breadth first, capped). Cached for a few seconds:
+   *  the same array comes back until then, so a caller can tell nothing changed. */
+  async scan(): Promise<readonly FileEntry[]> {
     if (this.notes && Date.now() - this.notes.at < 5000) return this.notes.list;
-    const out: string[] = [];
+    const out: FileEntry[] = [];
     const queue = [''];
     while (queue.length && out.length < MAX_INDEX) {
       const l = await this.list(queue.shift()!).catch(() => null);
       if (!l) continue;
-      out.push(...l.files.map((f) => f.path));
+      out.push(...l.files);
       queue.push(...l.folders.map((f) => f.path));
     }
     this.notes = { at: Date.now(), list: out.slice(0, MAX_INDEX) };
     return this.notes.list;
+  }
+
+  /** The paths of `scan`, for resolving `[[wiki links]]`. */
+  async index(): Promise<string[]> {
+    return (await this.scan()).map((f) => f.path);
   }
 }
 

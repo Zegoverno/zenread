@@ -5,7 +5,9 @@
 //      folder, settings kept across a reload, a folder opened through the file input, and offline use;
 //   2. the MCP App (ui/dist/index.html) in a sandboxed iframe under a minimal test host: handshake, a
 //      tool result opens a note, links go through the host in zenbot (zen context) and open in place
-//      elsewhere, web links go through the host, settings go to the server, the theme follows the host.
+//      elsewhere, web links go through the host, settings go to the server, the theme follows the host;
+//      in zenbot also the title and property chips, the host's palette (changed live), tasks ticked through
+//      zen://task, "Linked from", the ‹ n of N › stepper, Ask zenbot and Edit, and no title bar of its own.
 // `node tests/e2e.mjs`   (`SHOTS=/some/dir node tests/e2e.mjs` also writes screenshots there)
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -37,11 +39,12 @@ for (const [p, t] of Object.entries({ ...NOTES, '.hidden/secret.md': 'hidden', '
 
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 const HOST = `<!doctype html><meta charset=utf-8><title>host</title><body style="margin:0"><iframe id=f sandbox="allow-scripts" style="width:900px;height:700px;border:0"></iframe><script>
-window.calls = []; window.contexts = []; window.links = []; window.ready = false; window.docs = window.__docs || {};
+window.calls = []; window.contexts = []; window.links = []; window.messages = []; window.ready = false; window.docs = window.__docs || {}; window.backlinks = {};
 const withZen = new URLSearchParams(location.search).has('zen');
 const frame = document.getElementById('f');
 const reply = (id, result) => frame.contentWindow.postMessage({ jsonrpc: '2.0', id, result }, '*');
-const ctx = { theme: 'dark', displayMode: 'inline', ...(withZen ? { zen: { pane: 'board', path: new URLSearchParams(location.search).get('path'), mode: 'read', slot: 'opener' } } : {}) };
+const PALETTE = { '--color-background-primary': '#f6f1e7', '--color-text-primary': '#222018', '--color-text-secondary': '#7a7468', '--color-border-primary': '#dcd5c6', '--color-background-secondary': '#ece5d6', '--color-text-info': '#3d6b4a', '--color-background-info': '#3d6b4a', '--color-text-inverse': '#ffffff', '--font-sans': 'Arial, sans-serif', '--border-radius-full': '999px' };
+const ctx = { theme: withZen ? 'light' : 'dark', displayMode: 'inline', ...(withZen ? { styles: { variables: PALETTE }, containerDimensions: { width: 900, height: 700 }, zen: { pane: 'board', phone: false, path: new URLSearchParams(location.search).get('path'), mode: 'read', slot: 'opener', headingFont: 'Georgia, serif' } } : {}) };
 let settings = { wpm: 200, pauses: false, width: 72, spaced: false, bionic: false, focus: 'off', dim: 300 };
 addEventListener('message', e => {
   if (e.source !== frame.contentWindow) return;
@@ -55,14 +58,17 @@ addEventListener('message', e => {
       const d = window.docs[a.path];
       reply(m.id, d ? { content: [{ type: 'text', text: d.text }], structuredContent: d } : { isError: true, content: [{ type: 'text', text: 'Not found: ' + a.path }] });
     } else if (name === 'zenread_list') reply(m.id, { content: [{ type: 'text', text: 'list' }], structuredContent: { dir: a.dir ?? '', folders: [], files: Object.keys(window.docs).map(p => ({ name: p, path: p, size: 10, mtime: window.docs[p].mtime ?? 0 })) } });
+    else if (name === 'zenread_backlinks') reply(m.id, { content: [{ type: 'text', text: 'links' }], structuredContent: { path: a.path, backlinks: window.backlinks[a.path] ?? [] } });
     else if (name === 'zenread_settings') { if (a.change) settings = { ...settings, ...a.change }; reply(m.id, { content: [{ type: 'text', text: 'ok' }], structuredContent: { settings } }); }
     else reply(m.id, { isError: true, content: [{ type: 'text', text: 'unknown tool' }] });
   }
   else if (m.method === 'ui/update-model-context') { window.contexts.push(m.params); reply(m.id, {}); }
-  else if (m.method === 'ui/open-link') { window.links.push(m.params.url); reply(m.id, {}); }
+  else if (m.method === 'ui/open-link') { window.links.push(m.params.url); reply(m.id, m.params.url.includes('id=L%3ATasks.md%3A9') ? { isError: true } : {}); }
+  else if (m.method === 'ui/message') { window.messages.push(m.params); reply(m.id, {}); }
   else if (m.id !== undefined) reply(m.id, {});
 });
 window.sendContext = zen => frame.contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { zen } }, '*');
+window.sendChange = params => frame.contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params }, '*');
 window.sendResult = structuredContent => frame.contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: 'opened' }], structuredContent } }, '*');
 fetch('/ui.html').then(r => r.text()).then(html => { frame.srcdoc = html; });
 </script>`;
@@ -300,9 +306,11 @@ try {
 
   // =====================  2. the MCP App  =====================
   const doc = (p, extra = {}) => ({ path: p, name: p.split('/').pop(), text: NOTES[p], size: NOTES[p].length, mtime: 0, prev: null, next: null, resolved: {}, ...extra });
-  const indexDoc = doc('index.md', { resolved: { '[[Second]]': 'Second.md', 'sub/Third.md#deep-heading': 'sub/Third.md', '[[Ghost]]': null, 'gone.md': null }, next: 'Second.md' });
-  const second = doc('Second.md', { prev: 'index.md', resolved: { '[[index]]': 'index.md' } });
+  const indexDoc = doc('index.md', { at: 1, count: 2, resolved: { '[[Second]]': 'Second.md', 'sub/Third.md#deep-heading': 'sub/Third.md', '[[Ghost]]': null, 'gone.md': null }, next: 'Second.md' });
+  const second = doc('Second.md', { at: 2, count: 2, prev: 'index.md', resolved: { '[[index]]': 'index.md' } });
   const third = doc('sub/Third.md');
+  const TASKS = '---\ntitle: Plan\nstatus: open\n---\n# Plan\n\n- [ ] first task\n- [x] second task 🆔 t-2\n- [ ] third task\n';
+  const tasksDoc = { path: 'Tasks.md', name: 'Tasks.md', text: TASKS, size: TASKS.length, mtime: 0, prev: null, next: null, resolved: {} };
   const mk = async (query = '') => {
     const p = await browser.newPage({ viewport: { width: 900, height: 760 } });
     watch(p);
@@ -349,35 +357,119 @@ try {
   // in zenbot (a zen host context): the opener's path opens, and a note link is handed to the host
   const z = await mk('?zen=1&path=Second.md');
   const zf = z.frameLocator('#f');
-  await zf.locator('.title .name', { hasText: 'Second.md' }).waitFor();
+  const ztitle = () => zf.getByTestId('title').textContent();
+  await zf.getByTestId('title').filter({ hasText: 'Second note' }).waitFor();
+  assert.equal(await zf.locator('.title').count(), 0, 'the host draws the title bar: the page has none');
+  assert.equal(await zf.getByTitle('close (esc)', { exact: true }).count(), 0, 'and the close button');
+  assert.equal(await zf.locator('.body h1').count(), 0, 'the title is not shown twice');
   await zf.locator('.scroll a', { hasText: 'index' }).click();
-  await z.waitForFunction(() => window.links.includes('zen://open?path=index.md'));
-  assert.equal(await title(zf), 'Second.md', 'the host decides where the note opens');
+  await z.waitForFunction(() => window.links.includes('zen://open?path=index.md&mode=read'));
+  assert.equal(await ztitle(), 'Second note', 'the host decides where the note opens');
   await z.evaluate(d => window.sendResult(d), indexDoc);
-  await zf.locator('.title .name', { hasText: 'index.md' }).waitFor();
+  await zf.getByTestId('title').filter({ hasText: 'Harbour notes' }).waitFor();
   await zf.locator('a', { hasText: 'relative link' }).click();
-  await z.waitForFunction(() => window.links.includes('zen://open?path=sub%2FThird.md'));
+  await z.waitForFunction(() => window.links.includes('zen://open?path=sub%2FThird.md&mode=read'));
   assert.equal(await zf.locator('html').getAttribute('data-pane'), 'board', 'the pane is told to the page');
   assert.equal(await zf.locator('html').getAttribute('data-slot'), 'opener');
+  assert.equal(await zf.locator('a.missing').count(), 1, 'a wiki link to a note that is not there is dimmed');
+  await shot(z, 'zen-reader');
+
+  // the properties are chips under the title, not a raw line
+  assert.equal(await zf.locator('.fm').count(), 0);
+  assert.deepEqual(await zf.getByTestId('chips').locator('.chip').allTextContents(), ['#sea', '#stairs', 'source' + 'https://example.com/harbour']);
+  assert.equal(await zf.locator('.chip.tag').count(), 2);
+
+  // the host's palette and title font, and a change of theme resent live
+  const bg = () => zf.locator('body').evaluate(e => getComputedStyle(e).backgroundColor);
+  const fontOf = sel => zf.locator(sel).first().evaluate(e => getComputedStyle(e).fontFamily);
+  assert.equal(await bg(), 'rgb(246, 241, 231)', 'paper is the host\'s --color-background-primary');
+  assert.equal(await zf.locator('html').getAttribute('data-theme'), 'light');
+  assert.match(await fontOf('[data-testid=title]'), /Georgia/, 'the title uses the host\'s heading font');
+  assert.equal(await zf.locator('.chip.tag').first().evaluate(e => getComputedStyle(e).color), 'rgb(61, 107, 74)', 'the accent is the host\'s');
+  await z.evaluate(() => window.sendChange({ theme: 'dark', styles: { variables: { '--color-background-primary': '#1a1917', '--color-text-primary': '#e9e5dd', '--color-text-secondary': '#8a847a', '--color-border-primary': '#3a3732', '--color-background-secondary': '#262420', '--color-text-info': '#8fc29f' } } }));
+  await zf.locator('html[data-theme=dark]').waitFor();
+  assert.equal(await bg(), 'rgb(26, 25, 23)', 'the theme follows the host, live');
+  assert.equal(await zf.locator('.chip.tag').first().evaluate(e => getComputedStyle(e).color), 'rgb(143, 194, 159)');
+  await shot(z, 'zen-dark');
+
+  // the pane's size and a phone: small margins
+  const pad = () => zf.locator('.scroll > .rpage').evaluate(e => parseFloat(getComputedStyle(e).paddingLeft));
+  assert.equal(await zf.locator('html').getAttribute('data-narrow'), null);
+  const wide = await pad();
+  await z.evaluate(() => window.sendChange({ containerDimensions: { width: 420, height: 700 } }));
+  await zf.locator('html[data-narrow]').waitFor();
+  assert.ok((await pad()) < wide, 'a narrow pane has smaller margins');
+  await z.evaluate(() => window.sendChange({ containerDimensions: { width: 900, height: 700 } }));
+  await zf.locator('html:not([data-narrow])').waitFor();
+  await z.evaluate(() => window.sendChange({ zen: { pane: 'board', phone: true, path: 'index.md', mode: 'read', slot: 'opener', headingFont: 'Georgia, serif' } }));
+  await zf.locator('html[data-narrow]').waitFor();
+  await z.evaluate(() => window.sendChange({ zen: { pane: 'board', phone: false, path: 'index.md', mode: 'read', slot: 'opener', headingFont: 'Georgia, serif' } }));
+  await zf.locator('html:not([data-narrow])').waitFor();
+
+  // the stepper: where the note stands, and a step goes through the host
+  assert.equal(await zf.getByTestId('count').textContent(), '1 of 2');
+  assert.ok(await zf.getByRole('button', { name: 'Previous note' }).isDisabled());
+  await zf.getByRole('button', { name: 'Next note' }).click();
+  await z.waitForFunction(() => window.links.filter(l => l === 'zen://open?path=Second.md&mode=read').length === 1);
+  assert.equal(await ztitle(), 'Harbour notes', 'the host decides where the neighbour opens');
+
+  // Edit and Ask zenbot sit in the pane
+  await zf.getByRole('button', { name: 'Edit', exact: true }).click();
+  await z.waitForFunction(() => window.links.includes('zen://open?path=index.md&mode=edit'));
+  await zf.getByRole('button', { name: 'Ask zenbot' }).click();
+  await z.waitForFunction(() => window.messages.length === 1);
+  assert.deepEqual(await z.evaluate(() => window.messages[0]), { role: 'user', content: [{ type: 'text', text: 'About index.md: ' }] });
+
   // zenbot reuses the iframe for another file: the new path opens, the same path again does not reload it
   const reads = () => z.evaluate(() => window.calls.filter(c => c.name === 'zenread_read').length);
-  await z.evaluate(() => window.sendContext({ pane: 'side', path: 'sub/Third.md', mode: 'read', slot: 'opener' }));
-  await zf.locator('.title .name', { hasText: 'Third.md' }).waitFor();
+  await z.evaluate(() => window.sendContext({ pane: 'side', phone: false, path: 'sub/Third.md', mode: 'read', slot: 'opener', headingFont: 'Georgia, serif' }));
+  await zf.getByTestId('title').filter({ hasText: 'Third note' }).waitFor();
   assert.equal(await zf.locator('html').getAttribute('data-pane'), 'side');
+  assert.equal(await zf.getByTestId('count').count(), 0, 'no stepper for a note alone in its folder');
   const n = await reads();
-  await z.evaluate(() => window.sendContext({ pane: 'side', path: 'sub/Third.md', mode: 'read', slot: 'opener' }));
+  await z.evaluate(() => window.sendContext({ pane: 'side', phone: false, path: 'sub/Third.md', mode: 'read', slot: 'opener', headingFont: 'Georgia, serif' }));
   await z.waitForTimeout(300);
   assert.equal(await reads(), n, 'an unchanged path is not opened again');
-  await zf.getByRole('button', { name: 'Edit', exact: true }).click();
-  await z.waitForFunction(() => window.links.includes('zen://open?path=sub%2FThird.md&mode=edit'));
-  await zf.getByTitle('close (esc)', { exact: true }).click();
-  await z.waitForFunction(() => window.links.includes('zen://close'));
-  assert.equal(await title(zf), 'Third.md', 'close is a host request, not library navigation');
   await zf.locator('.top').click();
+  await z.keyboard.press('Escape');
+  await z.waitForFunction(() => window.links.includes('zen://close'));
+  assert.equal(await ztitle(), 'Third note', 'close is a host request, not library navigation');
   await z.keyboard.press('ArrowLeft');
   await z.waitForFunction(() => window.links.filter(l => l === 'zen://close').length === 2);
   assert.equal(await zf.locator('[data-testid=library]').count(), 0);
-  assert.equal(await z.evaluate(() => window.calls.filter(c => c.name === 'zenread_list').length), 0);
+
+  // "Linked from": asked after the note shows; each entry goes through the host
+  await z.evaluate(() => { window.backlinks['Second.md'] = [{ path: 'index.md', title: 'Harbour notes' }, { path: 'sub/Third.md', title: 'Third note' }]; });
+  await z.evaluate(() => window.sendContext({ pane: 'side', phone: false, path: 'Second.md', mode: 'read', slot: 'opener', headingFont: 'Georgia, serif' }));
+  await zf.getByTestId('linked').waitFor();
+  assert.deepEqual(await zf.getByTestId('linked').locator('.ll span').allTextContents(), ['Harbour notes', 'Third note']);
+  await zf.getByTestId('linked').getByRole('button', { name: /Third note/ }).click();
+  await z.waitForFunction(() => window.links.includes('zen://open?path=sub%2FThird.md&mode=read'));
+  assert.deepEqual(await z.evaluate(() => window.calls.filter(c => c.name === 'zenread_backlinks').map(c => c.arguments)).then(a => a.at(-1)), { path: 'Second.md' });
+  await z.evaluate(() => window.sendContext({ pane: 'side', phone: false, path: 'sub/Third.md', mode: 'read', slot: 'opener', headingFont: 'Georgia, serif' }));
+  await zf.getByTestId('title').filter({ hasText: 'Third note' }).waitFor();
+  assert.equal(await zf.getByTestId('linked').count(), 0, 'nothing links to it: no section');
+
+  // tasks: the boxes are live, and tick through zen://task, the 🆔 or the line
+  await z.evaluate(d => { window.docs['Tasks.md'] = d; }, tasksDoc);
+  await z.evaluate(() => window.sendContext({ pane: 'board', phone: false, path: 'Tasks.md', mode: 'read', slot: 'opener', headingFont: 'Georgia, serif' }));
+  await zf.getByTestId('title').filter({ hasText: 'Plan' }).waitFor();
+  const boxes = zf.locator('li.md-task input[type=checkbox]');
+  assert.equal(await boxes.count(), 3);
+  assert.equal(await boxes.first().isDisabled(), false);
+  await boxes.nth(0).click();
+  await z.waitForFunction(() => window.links.includes('zen://task?id=L%3ATasks.md%3A7&done=1'));
+  assert.equal(await boxes.nth(0).isChecked(), true, 'the box shows the tick at once');
+  assert.equal(await zf.locator('li.md-done').count(), 2);
+  await boxes.nth(1).click();
+  await z.waitForFunction(() => window.links.includes('zen://task?id=t-2&done=0'));
+  assert.equal(await boxes.nth(1).isChecked(), false);
+  await boxes.nth(2).click(); // the host refuses this one
+  await z.waitForFunction(() => window.links.includes('zen://task?id=L%3ATasks.md%3A9&done=1'));
+  await zf.locator('li.md-task').nth(2).locator('input:not(:checked)').waitFor();
+  assert.equal(await boxes.nth(2).isChecked(), false, 'a refused tick is put back');
+  await zf.getByText('could not tick that task').waitFor();
+  await shot(z, 'zen-tasks');
   await z.close();
   const empty = await mk('?zen=1');
   const ef = empty.frameLocator('#f');

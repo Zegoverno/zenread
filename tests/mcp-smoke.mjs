@@ -38,7 +38,7 @@ try {
   assert.equal(client.getServerVersion().version, manifest.version, 'the server reports the plugin version');
   const { tools } = await client.listTools();
   const names = tools.map(t => t.name).sort();
-  assert.deepEqual(names, ['zenread_list', 'zenread_open', 'zenread_read', 'zenread_settings']);
+  assert.deepEqual(names, ['zenread_backlinks', 'zenread_list', 'zenread_open', 'zenread_read', 'zenread_settings']);
   const byName = Object.fromEntries(tools.map(t => [t.name, t]));
   assert.equal(byName.zenread_open._meta.ui.resourceUri, 'ui://zenread/app');
   assert.deepEqual(byName.zenread_settings._meta.ui.visibility, ['app']);
@@ -80,6 +80,15 @@ try {
   assert.deepEqual(index.properties, [['title', 'Index'], ['source', 'https://example.com/index']]);
   assert.equal(index.source, 'https://example.com/index');
   assert.deepEqual(index.resolved, { '[[Soil]]': 'garden/Soil.md', 'garden/plants.md': 'garden/plants.md', '[[Ghost]]': null });
+
+  // ---- zenread_backlinks ----
+  const back = await client.callTool({ name: 'zenread_backlinks', arguments: { path: 'garden/plants.md' } });
+  assert.ok(!back.isError);
+  assert.deepEqual(back.structuredContent.backlinks, [{ path: 'index.md', title: 'Index' }]);
+  assert.deepEqual((await client.callTool({ name: 'zenread_backlinks', arguments: { path: 'index.md' } })).structuredContent.backlinks, [{ path: 'garden/plants.md', title: 'Plants' }]);
+  assert.deepEqual((await client.callTool({ name: 'zenread_backlinks', arguments: { path: 'garden/zeta.md' } })).structuredContent.backlinks, []);
+  assert.match(text(back), /link to garden\/plants\.md/);
+  assert.equal((await client.callTool({ name: 'zenread_backlinks', arguments: { path: '../outside/secret.md' } })).isError, true);
 
   // ---- zenread_open: shows the UI and carries the note for it ----
   const open = await client.callTool({ name: 'zenread_open', arguments: { path: 'garden/Soil.md' } });
@@ -132,7 +141,7 @@ try {
 // ---- no files folder (as in Claude Desktop): file tools say so, the UI still loads ----
 const bare = await start({});
 try {
-  for (const [name, args] of [['zenread_list', {}], ['zenread_read', { path: 'index.md' }], ['zenread_open', { path: 'index.md' }]]) {
+  for (const [name, args] of [['zenread_list', {}], ['zenread_read', { path: 'index.md' }], ['zenread_open', { path: 'index.md' }], ['zenread_backlinks', { path: 'index.md' }]]) {
     const r = await bare.callTool({ name, arguments: args });
     assert.equal(r.isError, true, name);
     assert.match(text(r), /ZEN_PLUGIN_FILES/);

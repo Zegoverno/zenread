@@ -12,6 +12,7 @@
 
 import { parser as base, GFM, type MarkdownConfig, type BlockContext, type Line, type InlineContext } from '@lezer/markdown';
 import type { SyntaxNode } from '@lezer/common';
+import { taskIdIn } from '../core/tasks.ts';
 import { splitFront } from '../core/text.ts';
 
 const WikiLink: MarkdownConfig = {
@@ -97,12 +98,25 @@ export interface Options {
   keepFront?: boolean;
 }
 
-/** `text` as an element (`div.md`) of rendered Markdown. */
+/** Where the text being rendered sits in its file, so a task item can say which line it is on.
+ *  `null` inside a quote or callout (a nested render): there the line is not known. */
+let origin: number | null = null;
+
+/** `text` as an element (`div.md`) of rendered Markdown. A task item of the file's own text carries
+ *  `data-line` (its 1-based line in the file, front matter counted) and, when the line has one, `data-tid`
+ *  (its 🆔), so the caller can tick it. */
 export function render(text: string, opts: Options = {}): Rendered {
   const { front, body } = opts.keepFront ? { front: null, body: text.replace(/\r\n?/g, '\n') } : splitFront(text);
   const root = document.createElement('div');
   root.className = 'md';
-  blocks(parser.parse(body).topNode, body, root);
+  const outer = origin;
+  // The front matter block (`---`, its lines, `---`) is two lines more than the lines it holds.
+  origin = opts.keepFront ? null : front === null ? 0 : front.split('\n').length + 2;
+  try {
+    blocks(parser.parse(body).topNode, body, root);
+  } finally {
+    origin = outer;
+  }
   return { el: root, front };
 }
 
@@ -194,6 +208,13 @@ function listItem(li: SyntaxNode, src: string, item: HTMLElement) {
       const done = marker ? /x/i.test(src.slice(marker.from, marker.to)) : false;
       item.classList.add('md-task');
       if (done) item.classList.add('md-done');
+      if (origin !== null) {
+        const from = li.from;
+        const end = src.indexOf('\n', from);
+        item.dataset.line = String(origin + src.slice(0, from).split('\n').length);
+        const tid = taskIdIn(src.slice(from, end < 0 ? undefined : end));
+        if (tid) item.dataset.tid = tid;
+      }
       const p = el('p');
       const box = el('input');
       box.type = 'checkbox';

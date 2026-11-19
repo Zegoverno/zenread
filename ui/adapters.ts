@@ -17,9 +17,13 @@ export interface NoteDoc {
   mtime: number;
   prev: string | null;
   next: string | null;
+  /** Its place (from 1) among the `count` notes of its folder, when the source says. */
+  at?: number;
+  count?: number;
   /** Where each link of the note points: `[[target]]` or the relative href → note path, or null. */
   resolved: Record<string, string | null>;
 }
+export interface Backlink { path: string; title: string }
 export interface FolderEntry { name: string; path: string }
 export interface NoteEntry extends FolderEntry { size: number; mtime: number }
 export interface Listing { dir: string; folders: FolderEntry[]; files: NoteEntry[]; truncated?: boolean }
@@ -31,6 +35,8 @@ export interface Source {
   live?: boolean;
   read(path: string): Promise<NoteDoc>;
   list(dir: string): Promise<Listing>;
+  /** The notes that link to `path` ("Linked from"), when the source can tell. */
+  backlinks?(path: string): Promise<Backlink[]>;
 }
 
 export interface SettingsAdapter {
@@ -42,6 +48,10 @@ export interface HostAdapter {
   openWeb(url: string): void;
   close?(): boolean;
   editNote?(path: string): void;
+  /** Put a draft about a note in a chat with zenbot (the host opens a new chat when none is open). */
+  ask?(path: string): Promise<boolean>;
+  /** Tick or untick a task (zenbot owns the file): true when the host did it. Absent where it cannot. */
+  setTask?(id: string, done: boolean): Promise<boolean>;
   /** Hand a note to the host to open (zenbot); true when it took it, false to open it here. */
   openNote?(path: string): Promise<boolean>;
 }
