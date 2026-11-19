@@ -17,6 +17,7 @@ import App_ from './App.svelte';
 import { createStore } from './store.svelte.ts';
 import { DEFAULTS, normalize } from '../core/settings.ts';
 import { VERSION } from '../core/version.ts';
+import { applyZen, zenOf } from './zen.svelte.ts';
 
 const app = new App({ name: 'zenread', version: VERSION });
 
@@ -69,12 +70,6 @@ const settings: SettingsAdapter = {
   },
 };
 
-/** zenbot's own part of the host context (absent in Claude, ChatGPT and other hosts). */
-interface ZenContext { pane?: string; path?: string | null; mode?: string; slot?: string }
-const zenOf = (ctx: McpUiHostContext | undefined): ZenContext | undefined => {
-  const z = (ctx as { zen?: unknown } | undefined)?.zen;
-  return z && typeof z === 'object' ? (z as ZenContext) : undefined;
-};
 const zenHost = () => zenOf(app.getHostContext());
 const host: HostAdapter = {
   close() {
@@ -116,10 +111,9 @@ function applyContext(ctx: McpUiHostContext | undefined, asked = true) {
   if (ctx.theme) applyDocumentTheme(ctx.theme);
   if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
   const z = zenOf(ctx);
-  const root = document.documentElement.dataset;
-  // zenbot draws the shell: tell the CSS where the reader sits (board or side panel) and why it was opened.
-  if (z?.pane) root.pane = z.pane; else delete root.pane;
-  if (z?.slot) root.slot = z.slot; else delete root.slot;
+  // zenbot draws the shell: tell the page where the reader sits (board or side panel), why it was opened,
+  // how big the pane is, its title font and whether it is a phone.
+  applyZen(ctx);
   // The opener hands over the file's path; a new one while the page lives (the iframe reused) opens it.
   if (asked && typeof z?.path === 'string' && z.path && z.path !== store.path) store.open(z.path, { fresh: true });
 }

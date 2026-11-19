@@ -1,4 +1,5 @@
-/* Theme variables. In a host, its variables win (--color-*); otherwise light or dark by the system. */
+/* Theme variables. In a host, its variables win (--color-*, --font-*, --border-radius-*, --shadow-md);
+   otherwise light or dark by the system. zenbot sends all of them, its title font as --zen-heading. */
 :root {
   color-scheme: light dark;
   --paper-d: #fbfaf7; --ink-d: #1f1d1a; --dim-d: #6f6a61; --faint-d: #d9d4ca; --accent-d: #2f6fdb; --err-d: #c0392b;
@@ -6,10 +7,21 @@
   --ink: var(--color-text-primary, var(--ink-d));
   --dim: var(--color-text-secondary, var(--dim-d));
   --faint: var(--color-border-primary, var(--faint-d));
-  --accent: var(--color-text-info, var(--accent-d));
+  --accent: var(--color-text-info, var(--color-ring-primary, var(--accent-d)));
+  --accent-fill: var(--color-background-info, var(--accent));
+  --on-accent: var(--color-text-inverse, var(--paper));
+  --soft: var(--color-background-secondary, color-mix(in srgb, var(--faint-d) 32%, var(--paper-d)));
+  --ok: var(--color-text-success, #3f7d4f);
+  --warn: var(--color-text-warning, #b7791f);
+  --r-sm: var(--border-radius-sm, 5px);
+  --r-md: var(--border-radius-md, 8px);
+  --r-lg: var(--border-radius-lg, 14px);
+  --r-full: var(--border-radius-full, 999px);
+  --shadow: var(--shadow-md, 0 6px 24px rgb(0 0 0 / 0.14));
   --err: var(--color-text-danger, var(--err-d));
   --mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace);
   --serif: ui-serif, 'Iowan Old Style', 'Charter', Georgia, serif;
+  --heading: var(--zen-heading, var(--serif));
   --sans: var(--font-sans, ui-sans-serif, -apple-system, 'Inter', 'Segoe UI', system-ui, sans-serif);
 }
 @media (prefers-color-scheme: dark) {

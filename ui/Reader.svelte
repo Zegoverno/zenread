@@ -12,6 +12,7 @@
   import { DIMS, WPM, keep, nextDim, nextFocus, widen as widthStep } from '../core/settings.ts';
   import type { ReaderSettings } from '../core/settings.ts';
   import { dwell, orp, properties, slug, sourceLink } from '../core/text.ts';
+  import { zen } from './zen.svelte.ts';
 
   let { store, env }: { store: Store; env: Env } = $props();
   const path = $derived(store.path ?? '');
@@ -53,6 +54,10 @@
   const k = $derived(keep(set.dim));
   const focusing = $derived(set.focus !== 'off' && !play);
   const canBack = $derived(store.back.length > 0);
+  // In zenbot the host draws the pane's title bar and close ×; the reader keeps only its own tools,
+  // behind "Aa" (the reading aids), so a phone's pane stays calm.
+  const inZen = $derived(zen.active);
+  let aids = $state(false);
 
   // ---- the folder's other notes (previous / next, from the source) ----
 
@@ -685,14 +690,22 @@
 <svelte:window onkeydown={key} />
 
 <div class="reader prose" class:spaced={set.spaced} style:--keep={k} data-testid="reader">
-  <div class="top">
-    <div class="title">
-      <span class="name">{name}</span>
-      {#if doc}<span class="dim">&nbsp;·&nbsp;{pct}%{#if wordsLeft}&nbsp;·&nbsp;{minutes} min left{/if}</span>{/if}
-      <span class="folder dim" title={folder || 'the folder'}><bdi>{folder || store.label}</bdi></span>
-    </div>
-    <div class="tools" role="toolbar" aria-label="reader">
-      <button onclick={goBack} title={canBack ? 'back (← or backspace)' : 'close (esc)'}>{canBack ? '←' : '✕'}</button>
+  <div class="top" class:zen={inZen}>
+    {#if inZen}
+      <div class="zbar">
+        {#if doc}<span class="dim zprog" data-testid="progress">{pct}%{#if wordsLeft} · {minutes} min left{/if}</span>{/if}
+        <span class="sp"></span>
+        <button class="aa" class:on={aids} onclick={() => (aids = !aids)} title="reading aids" aria-expanded={aids}>Aa</button>
+      </div>
+    {:else}
+      <div class="title">
+        <span class="name">{name}</span>
+        {#if doc}<span class="dim">&nbsp;·&nbsp;{pct}%{#if wordsLeft}&nbsp;·&nbsp;{minutes} min left{/if}</span>{/if}
+        <span class="folder dim" title={folder || 'the folder'}><bdi>{folder || store.label}</bdi></span>
+      </div>
+    {/if}
+    <div class="tools" class:hidden={inZen && !aids} role="toolbar" aria-label="reader">
+      {#if !inZen}<button onclick={goBack} title={canBack ? 'back (← or backspace)' : 'close (esc)'}>{canBack ? '←' : '✕'}</button>{/if}
       {#if !env.standalone && env.host.editNote}
         <button onclick={() => store.path && env.host.editNote?.(store.path)} title="Edit in host">Edit</button>
       {/if}
@@ -788,6 +801,13 @@
 <style>
   .reader { height: 100%; min-height: 0; display: flex; flex-direction: column; background: var(--paper); color: var(--ink); position: relative; }
   .top { flex: none; padding: 8px 14px 6px; border-bottom: 1px solid var(--faint); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+  .zbar { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+  .zbar .sp { flex: 1; }
+  .zbar .aa { padding: 3px 10px; border-radius: var(--r-full); border: 1px solid var(--faint); color: var(--dim); font-family: var(--heading); font-size: 13px; }
+  .zbar .aa:hover { color: var(--ink); border-color: var(--dim); }
+  .zbar .aa.on { color: var(--accent); border-color: var(--accent); }
+  .zprog { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .top.zen { border-bottom-color: transparent; }
   .title { display: flex; align-items: baseline; gap: 0; min-width: 0; white-space: nowrap; }
   .title .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 3em; }
   .title > .dim { flex: none; }
@@ -821,7 +841,7 @@
   .body :global(pre.plain) { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
   .body :global(.md) { overflow-wrap: break-word; }
   .body :global(.md > :first-child) { margin-top: 0; }
-  .body :global(h1), .body :global(h2), .body :global(h3), .body :global(h4), .body :global(h5), .body :global(h6) { font-family: var(--serif); line-height: 1.3; margin: 1.4em 0 0.5em; }
+  .body :global(h1), .body :global(h2), .body :global(h3), .body :global(h4), .body :global(h5), .body :global(h6) { font-family: var(--heading); line-height: 1.3; margin: 1.4em 0 0.5em; }
   .body :global(h1) { font-size: 1.6em; }
   .body :global(h2) { font-size: 1.3em; }
   .body :global(h3) { font-size: 1.12em; }
@@ -877,6 +897,9 @@
   .line .pivot { color: var(--err); }
   .pstat { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px 6px; font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 
+  :global(:root[data-narrow]) .rpage { padding: 14px 16px 30vh; }
+  :global(:root[data-narrow]) .prose .rpage { font-size: 18px; }
+  :global(:root[data-narrow]) .line { font-size: 26px; }
   @media (max-width: 640px) {
     .rpage { padding: 16px 16px 30vh; }
     .prose .rpage { font-size: 18px; }
