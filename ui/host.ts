@@ -19,6 +19,7 @@ import { DEFAULTS, normalize } from '../core/settings.ts';
 import { taskUrl } from '../core/tasks.ts';
 import { VERSION } from '../core/version.ts';
 import { applyZen, zenOf } from './zen.svelte.ts';
+import { bus } from './zenkeys.ts';
 
 const app = new App({ name: 'zenread', version: VERSION });
 
@@ -105,6 +106,19 @@ const host: HostAdapter = {
     const r = await app.openLink({ url: `zen://open?path=${encodeURIComponent(path)}&mode=read` });
     return !r.isError;
   },
+};
+
+// zenbot's keyboard model (zenkeys.ts): the reader's commands and unhandled keys go to zenbot, and zenbot
+// asks for a command or the keyboard focus. Only when the host context says zenbot; the SDK does not check
+// custom notifications, so `zen/…` goes out as is.
+bus.send = (method, params) => {
+  if (zenHost()) app.notification({ method, params } as never).catch(() => {});
+};
+app.fallbackNotificationHandler = async (n) => {
+  if (!zenHost()) return;
+  const p = (n.params ?? {}) as { id?: unknown; focused?: unknown };
+  if (n.method === 'zen/command' && typeof p.id === 'string') bus.run?.(p.id);
+  else if (n.method === 'zen/focus' && p.focused === true) (bus.focus ?? (() => window.focus()))();
 };
 
 const { source, prime } = hostSource();

@@ -55,13 +55,19 @@ zen plugins add zenread
 ```
 
 or open **Settings → Marketplace** in zenbot's web app and install it there. To try a build first:
-`zen plugins add ./zenread-0.2.0.tgz`. zenbot shows the permission below and asks you to approve it.
+`zen plugins add ./zenread-0.3.0.tgz`. zenbot shows the permission below and asks you to approve it.
 
 It lives in **Files**, not a separate Reading tab. It adds an opener for `*.md` files in read mode (set it as the default in
 **Settings → Plugins**; until then the built-in reader stays the default), and the `/read <path>`
 command. zenbot passes the file's path in its host context (`zen.path`, `zen.pane`, `zen.slot`); a link to
 another note is handed back to zenbot with `zen://open?path=…`, which opens it with the right opener.
 Changes to a note on disk show up in the reader within a couple of seconds.
+
+**Keyboard in zenbot.** The pane takes part in zenbot's keyboard model (see zenbot's `PLUGINS.md`, "Keys and commands"):
+the reader's actions show in zenbot's command list (Ctrl+K) and ring — Edit this note (`e`), Ask zenbot about this
+note (`a`), play (`p`), focus (`f`), the reading aids, headings, links and the folder's notes, with the keys in the
+table above — and the keys the reader does not use go to zenbot, so its shortcuts work inside the pane. Scrolling keys
+stay the reader's. Escape belongs to zenbot. Nothing changes outside zenbot.
 
 **Permission: `files:read`.** The server reads notes under the folder zenbot gives it
 (`ZEN_PLUGIN_FILES`) and keeps the reading settings in its own data folder (`ZEN_PLUGIN_DATA`). It has no
