@@ -4,9 +4,18 @@
   import Library from './Library.svelte';
   import Reader from './Reader.svelte';
   import type { Store } from './store.svelte.ts';
+  import { zen } from './zen.svelte.ts';
+  import { forward, isTyping } from './zenkeys.ts';
 
   let { store, env }: { store: Store; env: Env } = $props();
+
+  // No note open (zenbot's file list is in front): the Reader is not there to forward the keys, so the page does.
+  const onkeydown = (e: KeyboardEvent) => {
+    if (zen.active && !store.path) forward(e, isTyping(e));
+  };
 </script>
+
+<svelte:window {onkeydown} />
 
 <div class="app">
   {#if store.path}

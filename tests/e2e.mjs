@@ -39,7 +39,7 @@ for (const [p, t] of Object.entries({ ...NOTES, '.hidden/secret.md': 'hidden', '
 
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 const HOST = `<!doctype html><meta charset=utf-8><title>host</title><body style="margin:0"><iframe id=f sandbox="allow-scripts" style="width:900px;height:700px;border:0"></iframe><script>
-window.calls = []; window.contexts = []; window.links = []; window.messages = []; window.ready = false; window.docs = window.__docs || {}; window.backlinks = {};
+window.calls = []; window.contexts = []; window.links = []; window.messages = []; window.zenNotes = []; window.ready = false; window.docs = window.__docs || {}; window.backlinks = {};
 const withZen = new URLSearchParams(location.search).has('zen');
 const frame = document.getElementById('f');
 const reply = (id, result) => frame.contentWindow.postMessage({ jsonrpc: '2.0', id, result }, '*');
@@ -65,9 +65,11 @@ addEventListener('message', e => {
   else if (m.method === 'ui/update-model-context') { window.contexts.push(m.params); reply(m.id, {}); }
   else if (m.method === 'ui/open-link') { window.links.push(m.params.url); reply(m.id, m.params.url.includes('id=L%3ATasks.md%3A9') ? { isError: true } : {}); }
   else if (m.method === 'ui/message') { window.messages.push(m.params); reply(m.id, {}); }
+  else if (m.method?.startsWith('zen/')) window.zenNotes.push({ method: m.method, params: m.params });
   else if (m.id !== undefined) reply(m.id, {});
 });
 window.sendContext = zen => frame.contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { zen } }, '*');
+window.sendNote = (method, params) => frame.contentWindow.postMessage({ jsonrpc: '2.0', method, params }, '*');
 window.sendChange = params => frame.contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params }, '*');
 window.sendResult = structuredContent => frame.contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: 'opened' }], structuredContent } }, '*');
 fetch('/ui.html').then(r => r.text()).then(html => { frame.srcdoc = html; });
@@ -348,6 +350,12 @@ try {
   await h.waitForFunction(() => window.links.join() === 'https://example.com/page'); // web links go through the host
   await h.keyboard.press('Alt+o');
   await h.waitForFunction(() => window.links.at(-1) === 'https://example.com/harbour'); // so does the note's source
+  assert.deepEqual(await h.evaluate(() => window.zenNotes), [], 'no zen/ notification outside zenbot');
+  await h.keyboard.press('e');
+  await h.keyboard.press('Control+k');
+  await h.waitForTimeout(150);
+  assert.deepEqual(await h.evaluate(() => window.zenNotes), [], 'keys are not forwarded outside zenbot');
+  assert.deepEqual(await h.evaluate(() => window.links.filter(l => l.includes('mode=edit'))), [], 'and the reader keeps its own keys');
   // the note changes on disk (an agent edits it): the reader reads it again, where it was
   await h.evaluate(d => { window.docs['index.md'] = { ...d, text: d.text + '\n\nAdded on disk.\n', mtime: 5 }; }, indexDoc);
   await f.locator('.reader', { hasText: 'Added on disk.' }).waitFor({ timeout: 8000 });
@@ -420,6 +428,53 @@ try {
   await z.waitForFunction(() => window.messages.length === 1);
   assert.deepEqual(await z.evaluate(() => window.messages[0]), { role: 'user', content: [{ type: 'text', text: 'About index.md: ' }] });
 
+
+  // zenbot's keyboard model: the reader declares its commands, forwards the keys it does not use, runs a
+  // command zenbot picks, and takes the focus when asked
+  const notes = (method) => z.evaluate(m => window.zenNotes.filter(n => n.method === m).map(n => n.params), method);
+  await z.waitForFunction(() => window.zenNotes.some(n => n.method === 'zen/commands'));
+  const declared = async () => (await notes('zen/commands')).at(-1).commands;
+  const cs = await declared();
+  const by = Object.fromEntries(cs.map(c => [c.id, c]));
+  assert.deepEqual(by.edit, { id: 'edit', title: 'Edit this note', key: 'e', ring: true });
+  assert.deepEqual(by.ask, { id: 'ask', title: 'Ask zenbot about this note', key: 'a', ring: true });
+  assert.deepEqual(by.back, { id: 'back', title: 'Back to files' }, 'Escape is zenbot\'s: no key');
+  assert.deepEqual(cs.filter(c => c.ring).map(c => c.id), ['edit', 'ask', 'play', 'focus'], 'at most four in the ring');
+  assert.ok(by.properties && by.bionic.key === 'b' && by['next-heading'].key === ']', 'the reading aids are commands too');
+  assert.ok(cs.length <= 30 && cs.every(c => /^[a-z0-9-]{1,32}$/.test(c.id) && c.title.length <= 60));
+  assert.deepEqual(cs.filter(c => ['Mod+k', 'Mod+.', 'Mod+\\', 'Mod+Shift+\\', '?', 'Escape', 'g'].includes(c.key)), [], 'no key zenbot keeps');
+  assert.equal(new Set(cs.filter(c => c.key).map(c => c.key)).size, cs.filter(c => c.key).length, 'no key twice');
+  const sent = (method, key) => z.evaluate(([m, k]) => window.zenNotes.filter(n => n.method === m && (!k || n.params.key === k)).length, [method, key ?? '']);
+  await z.evaluate(() => window.sendNote('zen/focus', { focused: false }));
+  await z.evaluate(() => window.sendNote('zen/focus', { focused: true }));
+  await zf.locator('.scroll:focus').waitFor();
+  await z.keyboard.press('e'); // a command key goes to zenbot, which sends the command back
+  await z.waitForFunction(() => window.zenNotes.some(n => n.method === 'zen/key' && n.params.key === 'e'));
+  assert.deepEqual(await notes('zen/key').then(k => k.find(p => p.key === 'e')), { key: 'e', code: 'KeyE', ctrl: false, meta: false, alt: false, shift: false, typing: false });
+  const edits = () => z.evaluate(() => window.links.filter(l => l === 'zen://open?path=index.md&mode=edit').length);
+  assert.equal(await edits(), 1, 'the key itself did nothing here (the one edit is the button click above)');
+  await z.evaluate(() => window.sendNote('zen/command', { id: 'edit' }));
+  await z.waitForFunction(() => window.links.filter(l => l === 'zen://open?path=index.md&mode=edit').length === 2);
+  await z.evaluate(() => window.sendNote('zen/command', { id: 'ask' }));
+  await z.waitForFunction(() => window.messages.length === 2);
+  await z.evaluate(() => window.sendNote('zen/command', { id: 'nonsense' })); // ignored
+  await z.evaluate(() => window.sendNote('zen/command', { id: 'bionic' }));
+  await z.waitForFunction(() => window.calls.some(c => c.name === 'zenread_settings' && c.arguments.change?.bionic === true));
+  await z.evaluate(() => window.sendNote('zen/command', { id: 'bionic' }));
+  await z.waitForFunction(() => window.calls.some(c => c.name === 'zenread_settings' && c.arguments.change?.bionic === false));
+  const top0 = await scrollTop(zf);
+  await z.evaluate(() => window.sendNote('zen/command', { id: 'next-heading' }));
+  await zf.locator('.scroll').evaluate((e, t) => new Promise(r => { const i = setInterval(() => { if (e.scrollTop > t) { clearInterval(i); r(); } }, 20); }), top0);
+  await z.keyboard.press('ArrowDown'); // scrolling stays the reader's
+  await z.keyboard.press('Control+k'); // a key the reader does not use goes to zenbot
+  await z.waitForFunction(() => window.zenNotes.some(n => n.method === 'zen/key' && n.params.key === 'k' && n.params.ctrl === true));
+  assert.equal(await sent('zen/key', 'ArrowDown'), 0, 'a key the reader handled is not forwarded');
+  await z.keyboard.press('Escape'); // Escape is zenbot's
+  await z.waitForFunction(() => window.zenNotes.some(n => n.method === 'zen/key' && n.params.key === 'Escape'));
+  assert.equal(await z.evaluate(() => window.links.filter(l => l === 'zen://close').length), 0, 'the reader does not close itself on Escape under zenbot');
+  await z.evaluate(() => window.sendNote('zen/command', { id: 'back' }));
+  await z.waitForFunction(() => window.links.filter(l => l === 'zen://close').length === 1);
+
   // zenbot reuses the iframe for another file: the new path opens, the same path again does not reload it
   const reads = () => z.evaluate(() => window.calls.filter(c => c.name === 'zenread_read').length);
   await z.evaluate(() => window.sendContext({ pane: 'side', phone: false, path: 'sub/Third.md', mode: 'read', slot: 'opener', headingFont: 'Georgia, serif' }));
@@ -431,8 +486,7 @@ try {
   await z.waitForTimeout(300);
   assert.equal(await reads(), n, 'an unchanged path is not opened again');
   await zf.locator('.top').click();
-  await z.keyboard.press('Escape');
-  await z.waitForFunction(() => window.links.includes('zen://close'));
+  assert.equal(await z.evaluate(() => window.links.filter(l => l === 'zen://close').length), 1);
   assert.equal(await ztitle(), 'Third note', 'close is a host request, not library navigation');
   await z.keyboard.press('ArrowLeft');
   await z.waitForFunction(() => window.links.filter(l => l === 'zen://close').length === 2);

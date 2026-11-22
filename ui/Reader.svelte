@@ -14,6 +14,8 @@
   import { chips, dwell, orp, properties, slug, sourceLink } from '../core/text.ts';
   import { taskId } from '../core/tasks.ts';
   import { zen } from './zen.svelte.ts';
+  import { bus, forward, isTyping, owned, publish } from './zenkeys.ts';
+  import type { ZenCommand } from './zenkeys.ts';
 
   let { store, env }: { store: Store; env: Env } = $props();
   const path = $derived(store.path ?? '');
@@ -618,14 +620,81 @@
     else store.notice('no web link in the properties', 2000);
   }
 
+  // ---- commands (zenbot's keyboard model: see zenkeys.ts) ----
+
+  interface Cmd extends Omit<ZenCommand, 'title'> {
+    title: () => string;
+    /** Offered now (else left out of the list, though its key stays zenbot's). */
+    when?: () => boolean;
+    run: () => void;
+  }
+  /** What the reader can do, with its default keys: the same actions as the standalone keys. Never Escape,
+   *  ?, g or Mod+k/./\\: zenbot keeps those. Under zenbot these keys are forwarded, not handled here. */
+  const cmds: Cmd[] = [
+    { id: 'edit', title: () => 'Edit this note', key: 'e', ring: true, when: () => !!env.host.editNote, run: () => store.path && env.host.editNote?.(store.path) },
+    { id: 'ask', title: () => 'Ask zenbot about this note', key: 'a', ring: true, when: () => !!env.host.ask, run: () => void ask() },
+    { id: 'back', title: () => 'Back to files', run: close },
+    { id: 'play', title: () => (play ? (play.playing ? 'Pause playing' : 'Resume playing') : 'Play word by word'), key: 'p', ring: true, run: () => (!play ? startPlay() : play.playing ? pause() : resume()) },
+    { id: 'focus', title: () => 'Focus: off, paragraph, line', key: 'f', ring: true, run: cycleFocus },
+    { id: 'next-note', title: () => 'Next note in this folder', key: 'n', when: () => hasNext, run: () => void sibling(1) },
+    { id: 'previous-note', title: () => 'Previous note in this folder', key: 'Shift+n', when: () => hasPrev, run: () => void sibling(-1) },
+    { id: 'next-heading', title: () => 'Next heading', key: ']', run: () => heading(1) },
+    { id: 'previous-heading', title: () => 'Previous heading', key: '[', run: () => heading(-1) },
+    { id: 'next-link', title: () => 'Select next link', key: 'l', run: () => selectLink(1) },
+    { id: 'previous-link', title: () => 'Select previous link', key: 'Shift+l', run: () => selectLink(-1) },
+    { id: 'narrower', title: () => 'Narrower text column', key: '<', run: () => widen(-1) },
+    { id: 'wider', title: () => 'Wider text column', key: '>', run: () => widen(1) },
+    { id: 'spacing', title: () => 'Spaced lines and letters', key: ':', run: () => change({ spaced: !set.spaced }) },
+    { id: 'bionic', title: () => 'Bionic reading', key: 'b', run: () => change({ bionic: !set.bionic }) },
+    { id: 'dim', title: () => 'Dim the rest more or less', key: 'd', run: cycleDim },
+    { id: 'pauses', title: () => 'Longer stays at punctuation', key: '.', run: () => { change({ pauses: !set.pauses }, false); store.notice(`play: pauses ${set.pauses ? 'on' : 'off'}`, 2000); } },
+    { id: 'properties', title: () => "Show the note's properties", key: 'i', when: () => fm.length > 0, run: () => (propsOpen = !propsOpen) },
+    { id: 'changelog', title: () => "Show the note's changelog", key: 'h', when: () => hasLog, run: toggleLog },
+    { id: 'source', title: () => 'Open the note\'s source link', when: () => !!source, run: openSource },
+  ];
+  bus.keys = new Set(cmds.flatMap((c) => (c.key ? [c.key] : [])));
+  /** While playing, only these run (the rest would rebuild the page under the player). */
+  const WHILE_PLAYING = new Set(['play', 'pauses', 'edit', 'ask', 'back']);
+
+  function runCommand(id: string): boolean {
+    const c = cmds.find((x) => x.id === id);
+    if (!c || (c.when && !c.when()) || (play && !WHILE_PLAYING.has(id))) return false;
+    c.run();
+    return true;
+  }
+  /** zenbot gave the pane the keyboard: the reading area takes it (arrows and space scroll it at once). */
+  function focusReader() {
+    if (scroller) scroller.focus({ preventScroll: true });
+    else window.focus();
+  }
+  onMount(() => {
+    bus.run = runCommand;
+    bus.focus = focusReader;
+    return () => {
+      bus.run = null;
+      bus.focus = null;
+      if (zen.active) publish([]); // no note open: nothing to offer
+    };
+  });
+  // Under zenbot: the list follows the state (a neighbour exists, the note has properties, play is on).
+  $effect(() => {
+    if (!inZen) return;
+    publish(cmds.filter((c) => !c.when || c.when()).map((c) => ({ id: c.id, title: c.title(), key: c.key, ring: c.ring })));
+  });
+
   // ---- keys ----
 
-  const typing = (e: KeyboardEvent) => {
-    const t = e.target as HTMLElement | null;
-    return !!t && (/^(input|textarea|select)$/i.test(t.tagName) || t.isContentEditable);
-  };
+  const typing = isTyping;
 
+  /** Under zenbot a command's key is not handled here: it goes to zenbot, which sends the command back
+   *  (the owner may have rebound it). Keys not handled by the page go to zenbot too. */
   function key(e: KeyboardEvent) {
+    const typed = typing(e);
+    if (!(inZen && !typed && owned(e))) handle(e);
+    if (inZen) forward(e, typed);
+  }
+
+  function handle(e: KeyboardEvent) {
     if (!typing(e) && e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyO') {
       e.preventDefault();
       return openSource();
@@ -728,6 +797,7 @@
         goBack();
         break;
       case 'Escape':
+        if (inZen) return; // zenbot's key: forwarded
         close();
         break;
       default:
@@ -799,7 +869,7 @@
     <p class="msg err">{error}</p>
   {/if}
 
-  <div class="scroll" bind:this={scroller} onscroll={onScroll} class:hidden={!doc}>
+  <div class="scroll" tabindex="-1" bind:this={scroller} onscroll={onScroll} class:hidden={!doc}>
     <div class="rpage" style:max-width={set.width ? `calc(${set.width}ch + 48px)` : 'none'} class:focusing class:playing={!!play}>
       {#if inZen}
         <h1 class="ztitle" data-testid="title">{title}</h1>
@@ -912,6 +982,7 @@
   .hidden { display: none !important; }
 
   .scroll { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .scroll:focus { outline: none; }
   .rpage { margin: 0 auto; padding: 22px 24px 30vh; position: relative; font-family: var(--mono); font-size: 14px; line-height: 1.6; }
   .prose .rpage { font-family: var(--serif); font-size: 19px; line-height: 1.7; }
   .prose.spaced .rpage { line-height: 2.15; }
